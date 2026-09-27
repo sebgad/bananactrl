@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdio>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -24,6 +26,8 @@ public:
     /// Buffers to flash and commits (fsync): the data survives a reset.
     [[nodiscard]] Result<void> flush();
     [[nodiscard]] Result<std::string> readAll();
+    /// Up to `buffer.size()` bytes; 0 at the end of the file.
+    [[nodiscard]] Result<std::size_t> read(std::span<char> buffer);
     [[nodiscard]] long size();
 
 private:

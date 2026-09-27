@@ -21,6 +21,10 @@
 #include "banana/storage/LittleFs.hpp"
 #include "banana/storage/MeasurementRecorder.hpp"
 #include "banana/storage/Nvs.hpp"
+#include "banana/web/ApiRoutes.hpp"
+#include "banana/web/OtaRoutes.hpp"
+#include "banana/web/StaticFileRoutes.hpp"
+#include "banana/web/WebServer.hpp"
 
 #include "HeaterTask.hpp"
 
@@ -51,6 +55,7 @@ public:
 private:
     void startNetwork();
     void startRecording();
+    void startWebServer();
 
     storage::Nvs nvs_;
     storage::LittleFs fs_;
@@ -75,6 +80,10 @@ private:
     hal::PeriodicTimer tick_;
     std::optional<net::MdnsService> mdns_;
     std::optional<net::TimeSync> timeSync_;
+    web::ApiRoutes apiRoutes_;
+    web::OtaRoutes otaRoutes_;
+    web::StaticFileRoutes staticRoutes_;
+    std::optional<web::WebServer> webServer_; ///< after the routes: stopped before they are destroyed
 };
 
 } // namespace banana

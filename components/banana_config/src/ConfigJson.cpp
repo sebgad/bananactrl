@@ -144,4 +144,24 @@ Result<ParsedConfig> fromJson(std::string_view json, const Config& base)
     return parsed;
 }
 
+std::string toPublicJson(const Config& config)
+{
+    Config redacted = config;
+    redacted.wifi.password.clear();
+    return toJson(redacted);
+}
+
+Result<Config> applyWebUpdate(std::string_view json, const Config& current)
+{
+    auto parsed = fromJson(json, current);
+    if (!parsed) {
+        return fail(parsed.error());
+    }
+    Config& updated = parsed->config;
+    if (updated.wifi.password.empty()) {
+        updated.wifi.password = current.wifi.password;
+    }
+    return updated;
+}
+
 } // namespace banana::config

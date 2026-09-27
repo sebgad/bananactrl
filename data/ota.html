@@ -43,17 +43,45 @@
 
 <div class="main">
   <h2>Firmware Update</h2>
-  <form method="POST" action="/ota_firmware" enctype="multipart/form-data" acceptcharset="UTF-8">
+  <form id="firmwareForm">
     <label>MD5 Checksum for firmware</label>
     <input type="text" name="MD5" id="MD5">
-    <input type="file" name="data" accept=".bin">
-    <input type="submit" name="upload" value="Upload" title="Upload Firnware">
+    <input type="file" id="firmwareFile" accept=".bin">
+    <input type="submit" name="upload" value="Upload" title="Upload Firmware">
   </form>
   <h2>Data file Update</h2>
-  <form method="POST" action="/ota_spiffs" enctype="multipart/form-data">
-    <input type="file" name="data" />
+  <form id="dataForm">
+    <input type="file" id="dataFile">
     <input type="submit" name="upload" value="Upload" title="Upload File">
   </form>
+  <p id="uploadStatus"></p>
+  <script>
+    // The file is sent as the raw request body (the ESP-IDF web server has no multipart parser).
+    function upload(url, file, headers) {
+      var status = document.getElementById("uploadStatus");
+      if (!file) {
+        alert("No file selected");
+        return;
+      }
+      status.textContent = "Uploading " + file.name + " ...";
+      fetch(url, {method: "POST", headers: headers, body: file})
+        .then(function(response) { return response.text(); })
+        .then(function(text) { status.textContent = text; alert(text); })
+        .catch(function(error) { status.textContent = "Upload failed: " + error; });
+    }
+
+    document.getElementById("firmwareForm").onsubmit = function(event) {
+      event.preventDefault();
+      upload("/ota_firmware", document.getElementById("firmwareFile").files[0],
+             {"X-MD5": document.getElementById("MD5").value.trim()});
+    };
+
+    document.getElementById("dataForm").onsubmit = function(event) {
+      event.preventDefault();
+      var file = document.getElementById("dataFile").files[0];
+      upload("/ota_spiffs", file, file ? {"X-Filename": file.name} : {});
+    };
+  </script>
 </div>
 
 <div class="footer">

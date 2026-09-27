@@ -14,6 +14,7 @@
 #include "banana/core/board.hpp"
 #include "banana/drivers/Pt1000.hpp"
 #include "banana/rtos/Watchdog.hpp"
+#include "banana/web/OtaUpdater.hpp"
 
 namespace banana {
 namespace {
@@ -139,7 +140,9 @@ App::App()
                    .pumpRelay = &pumpRelay_,
                    .network = &wifi_},
                   config_),
-      tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer"))
+      tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer")),
+      apiRoutes_(configStore_, heaterTask_, wifi_), otaRoutes_(std::string{fs_.mountPoint()}),
+      staticRoutes_(std::string{fs_.mountPoint()})
 {
 }
 
@@ -182,6 +185,7 @@ void App::run()
 
     // After the heater: the connection attempt blocks for up to kWifiTimeout.
     startNetwork();
+    startWebServer();
     // data.csv after the time sync, like the Arduino firmware (its header carries the timestamp)
     startRecording();
 }
@@ -206,6 +210,30 @@ void App::startRecording()
     recorder_.emplace(std::move(*recorder));
     heaterTask_.attachRecorder(&*recorder_);
     ESP_LOGI(kTag, "recording to %s", path.c_str());
+}
+
+void App::startWebServer()
+{
+    if (wifi_.mode() == net::WifiManager::Mode::Off) {
+        return;
+    }
+    auto server = web::WebServer::start({});
+    if (!server) {
+        ESP_LOGE(kTag, "web server failed: %s", esp_err_to_name(server.error()));
+        return;
+    }
+    // The static file wildcard last: handlers are matched in registration order
+    for (auto res : {apiRoutes_.registerOn(*server), otaRoutes_.registerOn(*server),
+                     staticRoutes_.registerOn(*server)}) {
+        if (!res) {
+            ESP_LOGE(kTag, "web route registration failed: %s", esp_err_to_name(res.error()));
+            return;
+        }
+    }
+    webServer_.emplace(std::move(*server));
+    ESP_LOGI(kTag, "web server running on http://%s/", wifi_.ipAddress().c_str());
+    // Network and web UI are up: a new OTA image is good (otherwise the bootloader rolls back on reset)
+    web::OtaUpdater::markRunningAppValid();
 }
 
 void App::startNetwork()

@@ -6,6 +6,7 @@
 
 #include "banana/config/Config.hpp"
 #include "banana/control/ControlLoop.hpp"
+#include "banana/control/HeaterControl.hpp"
 #include "banana/drivers/RgbLed.hpp"
 #include "banana/drivers/Ssr.hpp"
 #include "banana/io/Outputs.hpp"
@@ -17,7 +18,7 @@ namespace banana {
 
 /// Runs the ControlLoop: turns interrupts, the 450 ms timer and config changes into loop calls,
 /// feeds the task watchdog and publishes the process snapshot. Replaces the Arduino loop().
-class HeaterTask final : public rtos::Task {
+class HeaterTask final : public rtos::Task, public control::IHeaterControl {
 public:
     static constexpr rtos::EventGroup::Bits kSampleReady = 1U << 0U;   ///< ADS1115 ALERT/RDY (8 SPS)
     static constexpr rtos::EventGroup::Bits kTick = 1U << 1U;          ///< 450 ms timer
@@ -39,11 +40,11 @@ public:
     HeaterTask& operator=(const HeaterTask&) = delete;
     HeaterTask(HeaterTask&&) = delete;
     HeaterTask& operator=(HeaterTask&&) = delete;
-    ~HeaterTask() = default;
+    ~HeaterTask() override = default;
 
     /// From any task: applied inside the heater task at its next wake-up.
-    void requestConfig(const config::Config& config);
-    [[nodiscard]] control::ProcessSnapshot snapshot() const;
+    void requestConfig(const config::Config& config) override;
+    [[nodiscard]] control::ProcessSnapshot snapshot() const override;
     /// Appends a row to data.csv on every 450 ms tick (STORE). The recorder must outlive the task.
     void attachRecorder(storage::MeasurementRecorder* recorder) { recorder_.store(recorder); }
 

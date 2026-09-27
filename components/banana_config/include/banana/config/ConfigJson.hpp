@@ -24,4 +24,11 @@ struct ParsedConfig {
 /// `false`/`0` are kept (the Arduino firmware treated them as missing and restored the defaults).
 [[nodiscard]] Result<ParsedConfig> fromJson(std::string_view json, const Config& base = {});
 
+/// params.json as served to the web UI: like toJson(), but the Wi-Fi password is left empty.
+[[nodiscard]] std::string toPublicJson(const Config& config);
+
+/// A settings update from the web UI (/paramUpdate), merged into `current`. The page gets no password
+/// (toPublicJson()), so an empty password keeps the stored one.
+[[nodiscard]] Result<Config> applyWebUpdate(std::string_view json, const Config& current);
+
 } // namespace banana::config

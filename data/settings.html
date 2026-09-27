@@ -26,7 +26,7 @@
         obj_json_req[str_section] = {};
       }
 
-      if (obj_div_input_children[i].type === "text"){
+      if (obj_div_input_children[i].type === "text" || obj_div_input_children[i].type === "password"){
         obj_json_req[str_section][str_key] = obj_div_input_children[i].value;
       } else if (obj_div_input_children[i].type === "checkbox"){
         obj_json_req[str_section][str_key] = (obj_div_input_children[i].checked);
@@ -110,6 +110,11 @@
               obj_input.type = "checkbox";
               obj_input.checked = obj_json_req[str_section_key][str_key];
               obj_label.append(obj_input);
+            } else if (str_key === "wifiPassword"){
+              // the device never sends the password: empty keeps the stored one
+              obj_input.type = "password";
+              obj_input.placeholder = "unchanged";
+              obj_para.appendChild(obj_input);
             } else {
               obj_input.type="text";
               // append input to form

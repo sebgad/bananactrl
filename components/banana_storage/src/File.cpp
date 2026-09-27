@@ -75,6 +75,15 @@ Result<std::string> File::readAll()
     return content;
 }
 
+Result<std::size_t> File::read(std::span<char> buffer)
+{
+    const std::size_t count = std::fread(buffer.data(), 1, buffer.size(), file_);
+    if (count < buffer.size() && std::ferror(file_) != 0) {
+        return fail(ESP_FAIL);
+    }
+    return count;
+}
+
 long File::size()
 {
     const long position = std::ftell(file_);

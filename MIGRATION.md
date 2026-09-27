@@ -344,29 +344,70 @@ present after a reset (checked by reading the partition back). Download via HTTP
 
 ---
 
-## Phase 7 — Web server + OTA (2 days)
+## Phase 7 — Web server + OTA (2 days) — implemented, web UI test pending
 
-1. `net::WebServer` — RAII around `httpd_handle_t` (`wildcard` matching, `max_uri_handlers = 20`,
-   ~8 kB stack). Routes are objects implementing
-   `class IRoute { virtual std::span<const httpd_uri_t> uris() = 0; }`, and `WebServer::add(IRoute&)`
-   registers them with `user_ctx = this`.
+New component `banana_web` (depends on config, control, net, storage).
+
+1. `web::WebServer` — RAII around `httpd_handle_t` (wildcard matching, 16 handlers, 8 kB stack,
+   `lru_purge_enable` because browsers keep idle sockets). Instead of an `IRoute` interface, each route class
+   has `registerOn(WebServer&)` and uses `server.on<Class, &Class::method>(uri, method, *this)`: a template
+   trampoline turns `user_ctx` back into the object. `HttpRequest` wraps `httpd_req_t*`
+   (`header()`, `body(max)`, `receive(buffer)` with timeout retries, `send()`, chunked sending).
 2. Route classes:
 
    | Class               | URIs                                                                 | Depends on                    |
    |---------------------|----------------------------------------------------------------------|-------------------------------|
-   | `StaticFileRoutes`  | `/`, `/*.html`, `/style.css`, favicons, `/data.csv`, `/*logfile.txt`, `/params.json` | `LittleFs` (chunked send, MIME by extension) |
-   | `ApiRoutes`         | `GET /lastvalues.json`, `POST /paramUpdate`, `GET /paramReset`, `GET /restartesp` | `HeaterController::snapshot()`, `ConfigStore`, `EventGroup`, `WifiManager` |
-   | `OtaRoutes`         | `GET /failsafe` (embedded gzip), `POST /ota_firmware`, `POST /ota_spiffs` | `OtaUpdater`, `LittleFs` |
+   | `ApiRoutes`         | `GET /lastvalues.json`, `GET /params.json`, `POST /paramUpdate`, `GET /paramReset`, `GET /restartesp` | `control::IHeaterControl` (implemented by `HeaterTask`), `ConfigStore`, `WifiManager` |
+   | `OtaRoutes`         | `GET /failsafe`, `POST /ota_firmware`, `POST /ota_spiffs`            | `OtaUpdater`, LittleFS        |
+   | `StaticFileRoutes`  | `GET /*` (registered last): the files in `kStaticFiles` only         | LittleFS (4 kB chunks)        |
 
-   Small helper `HttpRequest`/`HttpResponse` wrappers around `httpd_req_t*`
-   (`Result<std::string> body()`, `header(name)`, `send(status, type, body)`).
-3. `net::OtaUpdater` — `Result<void> begin(Md5 expected)`, `write(std::span<const uint8_t>)`,
-   `Result<void> finish()`. The destructor calls `esp_ota_abort` if `finish()` wasn't reached, so an
-   aborted upload never leaves a half-open handle. Running MD5 via `esp_rom_md5`/PSA **[v6-check: mbedTLS 4 / PSA in v6]**.
-4. `esp_http_server` doesn't parse `multipart/form-data`. Change `ota.html` + the failsafe page to
-   `fetch()` the file as the raw body with `X-MD5` / `X-Filename` headers.
-5. Enable `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. `App` calls
-   `esp_ota_mark_app_valid_cancel_rollback()` once Wi-Fi + web server are up.
+   - **Wi-Fi password never leaves the device:** `/params.json` is generated from `ConfigStore::current()` by
+     `toPublicJson()` (password empty), not served from the file; `params.json` is not in `kStaticFiles`.
+     `/paramUpdate` goes through `applyWebUpdate()`: an empty password keeps the stored one.
+     `settings.html` shows the field as `type="password"` with the placeholder "unchanged".
+     (Consequence: an open network cannot be set through the web UI once a password is stored.)
+   - `/paramUpdate` merges into the current configuration (missing keys keep their value; the Arduino firmware
+     set them to 0), saves, then `IHeaterControl::requestConfig()`. Wi-Fi changes are reported as
+     "take effect after a restart" (as before, only applied at boot).
+   - `/lastvalues.json`: same keys as before (`Time`, `Temperature`, `PID.*`, `WiFi."SignalStrength in %"`).
+   - Response texts kept where the pages show them (`alert()`).
+3. `web::OtaUpdater` — `begin(md5, size)` (`OTA_WITH_SEQUENTIAL_WRITES`: sectors are erased as they are
+   reached, not the whole 2 MB up front), `write()`, `finish()` (MD5 via `esp_rom_md5`, then `esp_ota_end()`
+   validates the image, then `esp_ota_set_boot_partition()`). The destructor calls `esp_ota_abort()` if
+   `finish()` wasn't reached. The MD5 stays mandatory, as in the Arduino firmware.
+4. `ota.html` sends the file with `fetch()` as the raw body with `X-MD5` / `X-Filename` headers (no multipart
+   parser in `esp_http_server`). `/failsafe` is the same `ota.html`, gzip-compressed at build time
+   (`components/banana_web/CMakeLists.txt`) and embedded — `ota.h` with the hand-made hex dump is gone.
+   `/ota_spiffs` (name kept) writes `.<name>.upload` and renames it. Allowed names: `[A-Za-z0-9._-]`,
+   max 32 characters, no leading dot, not `params.json`/`data.csv`/log files; max 512 kB.
+5. `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`. `App::startWebServer()` calls
+   `OtaUpdater::markRunningAppValid()` once the web server runs (SoftAP counts). Needs the new bootloader,
+   i.e. one serial `idf.py flash`.
+6. The Arduino `server.end(); server.begin();` on `WIFI_DISCONNECT` is gone: `esp_http_server` is bound to
+   all interfaces and survives reconnects.
+
+Tests: host tests for `WebPaths` (URI → file, MIME, upload names, MD5 parsing), `lastValuesJson`,
+`toPublicJson` / `applyWebUpdate` (incl. numbers sent as strings by `settings.html`).
+
+Bench (SoftAP, no Wi-Fi client available yet): web server starts at 192.168.4.1, routes registered,
+image 1.03 MB (50 % of the OTA slot free).
+
+**Bench finding — I2C NACK during flash writes (mitigated):** an ADS1115 read occasionally ends in a NACK
+("I2C bus is still busy but software timeout detected"; the driver resets the bus). Experiments:
+- without `data.csv` recording, or with the FileLogger not writing: no errors (100 s);
+- recording + FileLogger: one error per ~9 s; with an extra log line per tick (more FileLogger flushes): one per
+  ~1.3 s — always a conversion read right after ALERT/RDY, never the config read at tick time;
+- `CONFIG_I2C_ISR_IRAM_SAFE` and a 500 ms I2C timeout: no change. ADS1115 VDD is 3.3 V.
+
+So a read fails when a flash write from *another* task (other core) overlaps it; the heater task's own
+`data.csv` writes never overlap its own reads. Root cause inside the ESP32/IDF I2C path not identified.
+Mitigation: `Ads1115::readRegister()` retries once — under the stress build 109 retries in 150 s, none failed
+twice; with the normal build no fault in 90 s. The driver's `E i2c.master` lines remain in the log.
+
+Also measured: each `data.csv` append + `fsync` takes 43–49 ms (LittleFS rewrites the partial last block;
+grows with the block fill), every ~6–13 s one takes up to 320 ms (metadata compaction). The heater task is
+blocked meanwhile, so an ALERT/RDY event can be merged with the next one. Same write pattern as the Arduino
+firmware (open/append/close per row); moving the recorder to its own task is a Phase 8 option.
 
 ✅ **Exit:** all pages in `data/` work (only the upload form changed), settings round-trip, graphs load,
 OTA from the web UI boots the new image.

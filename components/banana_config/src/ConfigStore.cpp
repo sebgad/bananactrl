@@ -25,6 +25,7 @@ ConfigStore::Loaded ConfigStore::load()
             loaded.writeError = res.error();
         }
     }
+    current_ = loaded.config;
     return loaded;
 }
 
@@ -32,6 +33,12 @@ Result<void> ConfigStore::save(const Config& config)
 {
     const std::scoped_lock lock{mutex_};
     return saveLocked(config);
+}
+
+Config ConfigStore::current() const
+{
+    const std::scoped_lock lock{mutex_};
+    return current_;
 }
 
 Result<Config> ConfigStore::reset()
@@ -58,7 +65,11 @@ Result<void> ConfigStore::saveLocked(const Config& config)
             return res;
         }
     } // closed before the rename
-    return storage::rename(temporary, path_);
+    if (auto res = storage::rename(temporary, path_); !res) {
+        return res;
+    }
+    current_ = config;
+    return {};
 }
 
 } // namespace banana::config

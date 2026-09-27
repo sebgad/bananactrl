@@ -4,4 +4,5 @@ idf_component_register(SRCS "src/Ads1115.cpp"
                             "src/Ssr.cpp"
                             "src/TemperatureConverters.cpp"
                        INCLUDE_DIRS "include"
-                       REQUIRES banana_config banana_core banana_hal)
+                       REQUIRES banana_config banana_core banana_hal
+                       PRIV_REQUIRES log)

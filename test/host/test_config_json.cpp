@@ -129,4 +129,44 @@ TEST(ConfigJson, WritesArduinoKeyNames)
     }
 }
 
+TEST(ConfigJson, PublicJsonHidesThePassword)
+{
+    Config config;
+    config.wifi.ssid = "home";
+    config.wifi.password = "secret";
+    const std::string json = toPublicJson(config);
+    EXPECT_EQ(json.find("secret"), std::string::npos);
+    const auto parsed = fromJson(json);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->config.wifi.ssid, "home");
+    EXPECT_EQ(parsed->config.wifi.password, "");
+}
+
+TEST(ConfigJson, WebUpdateWithEmptyPasswordKeepsTheStoredOne)
+{
+    Config current;
+    current.wifi.ssid = "home";
+    current.wifi.password = "secret";
+    const auto updated = applyWebUpdate(R"({"Wifi": {"wifiSSID": "home", "wifiPassword": ""}})", current);
+    ASSERT_TRUE(updated.has_value());
+    EXPECT_EQ(updated->wifi.password, "secret");
+
+    const auto changed = applyWebUpdate(R"({"Wifi": {"wifiSSID": "other", "wifiPassword": "new"}})", current);
+    ASSERT_TRUE(changed.has_value());
+    EXPECT_EQ(changed->wifi.ssid, "other");
+    EXPECT_EQ(changed->wifi.password, "new");
+}
+
+TEST(ConfigJson, WebUpdateAcceptsNumbersAsStrings)
+{
+    // settings.html sends every text input as a JSON string
+    const auto updated = applyWebUpdate(
+        R"({"PID": {"CtrlTarget": "93.5", "CtrlPropActivate": false}, "SSR": {"SsrFreq": "20"}})", Config{});
+    ASSERT_TRUE(updated.has_value());
+    EXPECT_FLOAT_EQ(updated->pid.target, 93.5F);
+    EXPECT_FALSE(updated->pid.propActive);
+    EXPECT_EQ(updated->ssr.frequencyHz, 20U);
+    EXPECT_FALSE(applyWebUpdate("{broken", Config{}).has_value());
+}
+
 } // namespace

@@ -34,6 +34,8 @@ public:
     [[nodiscard]] Result<void> save(const Config& config);
     /// Factory settings, saved.
     [[nodiscard]] Result<Config> reset();
+    /// The configuration last loaded or saved (what the web UI shows and edits).
+    [[nodiscard]] Config current() const;
 
     [[nodiscard]] const std::string& path() const { return path_; }
 
@@ -41,7 +43,8 @@ private:
     [[nodiscard]] Result<void> saveLocked(const Config& config);
 
     std::string path_;
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
+    Config current_;
 };
 
 } // namespace banana::config

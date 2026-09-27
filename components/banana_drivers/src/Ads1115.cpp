@@ -2,10 +2,18 @@
 
 #include <array>
 
+#include "esp_log.h"
+
 namespace banana::drivers {
 
 using ads1115::ConfigRegister;
 using ads1115::Register;
+
+namespace {
+
+constexpr const char* kTag = "ads1115";
+
+} // namespace
 
 Result<Ads1115> Ads1115::create(hal::I2cDevice& device, const ITemperatureConverter& converter,
                                 const Settings& settings)
@@ -87,7 +95,15 @@ Result<std::uint16_t> Ads1115::readRegister(Register reg)
 {
     const std::array pointer{static_cast<std::uint8_t>(reg)};
     std::array<std::uint8_t, 2> data{};
-    if (auto res = device_->writeRead(pointer, data); !res) {
+    // One retry: a read that overlaps a flash write from another task occasionally gets a NACK (seen on the
+    // bench, ESP32 + IDF 6.1); the driver resets the bus and the next attempt succeeds.
+    auto res = device_->writeRead(pointer, data);
+    if (!res) {
+        ESP_LOGD(kTag, "register %d read failed (%s), retrying", static_cast<int>(reg),
+                 esp_err_to_name(res.error()));
+        res = device_->writeRead(pointer, data);
+    }
+    if (!res) {
         return fail(res.error());
     }
     return static_cast<std::uint16_t>((data[0] << 8U) | data[1]); // MSB first
