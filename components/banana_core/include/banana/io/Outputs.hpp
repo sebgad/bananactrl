@@ -21,6 +21,11 @@ public:
 
 enum class LedColor : std::uint8_t { Red, Green, Blue, Orange, Purple, White };
 
+enum class LedEffect : std::uint8_t {
+    Steady,
+    Pulse, ///< fades in and out ("breathing")
+};
+
 class IStatusLed {
 public:
     IStatusLed() = default;
@@ -30,8 +35,9 @@ public:
     IStatusLed& operator=(IStatusLed&&) = default;
     virtual ~IStatusLed() = default;
 
-    /// `channelGains`: apply the per-channel gain factors (off for fault colours).
-    virtual void show(LedColor color, bool channelGains) = 0;
+    /// `channelGains`: apply the per-channel gain factors (off for fault colours). Repeating the current
+    /// command keeps a running effect in phase.
+    virtual void show(LedColor color, bool channelGains, LedEffect effect) = 0;
 };
 
 class IDigitalInput {

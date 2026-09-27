@@ -18,16 +18,17 @@ using banana::control::indicate;
 using banana::control::LedCommand;
 using banana::drivers::rgbCounts;
 using banana::io::LedColor;
+using banana::io::LedEffect;
 
 TEST(StatusIndicator, Priorities)
 {
     EXPECT_EQ(indicate(Faults{Fault::WifiDisconnect}, true, 85.0F, 85.0F),
               (LedCommand{LedColor::Purple, false}));
     EXPECT_EQ(indicate({}, true, 20.0F, 85.0F), (LedCommand{LedColor::Red, true}));
-    EXPECT_EQ(indicate({}, false, 83.9F, 85.0F), (LedCommand{LedColor::Orange, true}));
+    EXPECT_EQ(indicate({}, false, 83.9F, 85.0F), (LedCommand{LedColor::Orange, true, LedEffect::Pulse}));
     EXPECT_EQ(indicate({}, false, 84.0F, 85.0F), (LedCommand{LedColor::Green, true}));
     EXPECT_EQ(indicate({}, false, 86.0F, 85.0F), (LedCommand{LedColor::Green, true}));
-    EXPECT_EQ(indicate({}, false, 86.1F, 85.0F), (LedCommand{LedColor::Blue, true}));
+    EXPECT_EQ(indicate({}, false, 86.1F, 85.0F), (LedCommand{LedColor::Blue, true, LedEffect::Pulse}));
 }
 
 TEST(Diagnostics, Inputs)
@@ -84,6 +85,43 @@ TEST(RgbCounts, GainsSaturationAndResolution)
     EXPECT_EQ(rgbCounts(LedColor::White, false, led), (Rgb{150, 150, 150})); // gains off (fault colour)
     led.resolutionBits = 10;
     EXPECT_EQ(rgbCounts(LedColor::White, true, led), (Rgb{300, 75, 0})); // 0..255 scale is not rescaled
+}
+
+TEST(StatusIndicator, OnlyHeatingUpAndCoolingDownPulse)
+{
+    EXPECT_EQ(indicate({}, false, 70.0F, 85.0F).effect, LedEffect::Pulse);  // heating up
+    EXPECT_EQ(indicate({}, false, 90.0F, 85.0F).effect, LedEffect::Pulse);  // cooling down
+    EXPECT_EQ(indicate({}, false, 85.0F, 85.0F).effect, LedEffect::Steady); // ready
+    EXPECT_EQ(indicate({}, true, 70.0F, 85.0F).effect, LedEffect::Steady);  // brewing
+    EXPECT_EQ(indicate(Faults{Fault::TempOutOfRange}, false, 5.0F, 85.0F).effect, LedEffect::Steady);
+}
+
+TEST(LedPulse, BreathesOncePerPeriod)
+{
+    using banana::drivers::kPulsePeriod;
+    using banana::drivers::pulseLevel;
+    EXPECT_NEAR(pulseLevel(0ms), 1.0F, 1e-5F);
+    EXPECT_NEAR(pulseLevel(kPulsePeriod), 1.0F, 1e-5F); // periodic
+    const float dimmest = pulseLevel(kPulsePeriod / 2);
+    EXPECT_LT(dimmest, 0.01F); // nearly off in the middle (gamma)
+    EXPECT_GT(dimmest, 0.0F);
+    float previous = pulseLevel(0ms);
+    for (auto t = 20ms; t <= kPulsePeriod / 2; t += 20ms) { // monotonic fade out, then in
+        const float level = pulseLevel(t);
+        EXPECT_LE(level, previous + 1e-6F);
+        previous = level;
+    }
+    EXPECT_NEAR(pulseLevel(kPulsePeriod / 4), pulseLevel(kPulsePeriod * 3 / 4), 1e-5F); // symmetric
+}
+
+TEST(LedPulse, DimmedCounts)
+{
+    using banana::drivers::dimmed;
+    const std::array<std::uint32_t, 3> full{76, 3, 0};
+    EXPECT_EQ(dimmed(full, 1.0F), full);
+    EXPECT_EQ(dimmed(full, 0.5F), (std::array<std::uint32_t, 3>{38, 2, 0}));
+    EXPECT_EQ(dimmed(full, 0.0F), (std::array<std::uint32_t, 3>{0, 0, 0}));
+    EXPECT_EQ(dimmed(full, 2.0F), full); // clamped
 }
 
 } // namespace

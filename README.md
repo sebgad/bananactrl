@@ -67,6 +67,19 @@ The settings page never shows the stored Wi-Fi password; leaving the field empty
 | `/ota.html`          | firmware and data file upload                             |
 | `/log.html`          | `logfile_recent.txt` (this session), `logfile_last.txt` (previous session) |
 
+## Status LED
+
+| Colour           | Meaning                                                  |
+|------------------|----------------------------------------------------------|
+| white            | booting                                                  |
+| orange, pulsing  | heating up (more than 1 K below the target)              |
+| green            | ready (within ±1 K of the target)                        |
+| blue, pulsing    | cooling down (more than 1 K above the target)            |
+| red              | brewing                                                  |
+| purple           | fault (heater off, except for a Wi-Fi fault)             |
+
+Pulsing = fading in and out once per 2 s. Brightness per colour: settings section `LED`.
+
 ## Home Assistant (MQTT, optional)
 
 Settings → section **MQTT**: `MqttEnabled`, `MqttHost` (e.g. the Home Assistant host with the Mosquitto add-on),

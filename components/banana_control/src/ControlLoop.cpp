@@ -58,7 +58,7 @@ void ControlLoop::onTick(Millis now)
     // LED_CTRL on every 3rd tick
     if (tick % 3 == 0) {
         const LedCommand led = indicate(faults_, brew_.brewing(), celsius_, pidSettings_.target);
-        led_->show(led.color, led.channelGains);
+        led_->show(led.color, led.channelGains, led.effect);
     }
 
     checkStandby(now);

@@ -180,7 +180,7 @@ void App::run()
     ESP_LOGI(kTag, "bananactrl starting, last reset reason: %d", static_cast<int>(esp_reset_reason()));
 
     // Early, so errors can be shown on the LED (as in the Arduino setup())
-    rgbLed_.show(io::LedColor::White, true);
+    rgbLed_.show(io::LedColor::White, true, io::LedEffect::Steady);
     statusLed_.set(true);
 
     if (auto info = fs_.info()) {

@@ -38,11 +38,13 @@ class Led final : public io::IStatusLed {
 public:
     io::LedColor color = io::LedColor::White;
     bool gains = false;
+    io::LedEffect effect = io::LedEffect::Steady;
     int shows = 0;
-    void show(io::LedColor c, bool g) override
+    void show(io::LedColor c, bool g, io::LedEffect e) override
     {
         color = c;
         gains = g;
+        effect = e;
         ++shows;
     }
 };
