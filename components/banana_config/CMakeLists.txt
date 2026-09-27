@@ -1,5 +1,5 @@
 # Config.hpp is a plain value type (used by the host-tested control layer). ConfigJson is host-tested too;
-# ConfigStore adds the file access.
+# ConfigStore adds the storage (NVS, legacy params.json import).
 idf_component_register(SRCS "src/ConfigJson.cpp"
                             "src/ConfigStore.cpp"
                        INCLUDE_DIRS "include"

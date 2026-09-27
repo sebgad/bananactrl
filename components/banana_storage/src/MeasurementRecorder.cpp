@@ -17,7 +17,7 @@ Result<MeasurementRecorder> MeasurementRecorder::create(const std::string& path,
     return MeasurementRecorder{std::move(*file)};
 }
 
-Result<void> MeasurementRecorder::append(csv::Row row)
+Result<csv::Row> MeasurementRecorder::append(csv::Row row)
 {
     if (!started_) {
         started_ = true;
@@ -25,13 +25,16 @@ Result<void> MeasurementRecorder::append(csv::Row row)
     }
     row.seconds -= startSeconds_;
     if (auto res = file_.write(csv::row(row)); !res) {
-        return res;
+        return fail(res.error());
     }
     if (++unsyncedRows_ < kSyncEveryRows) {
-        return {};
+        return row;
     }
     unsyncedRows_ = 0;
-    return file_.flush(); // committed: survives a reset and is visible to /data.csv downloads
+    if (auto res = file_.flush(); !res) { // committed: survives a reset and is visible to /data.csv downloads
+        return fail(res.error());
+    }
+    return row;
 }
 
 } // namespace banana::storage

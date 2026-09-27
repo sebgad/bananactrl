@@ -33,7 +33,10 @@ esp_err_t StaticFileRoutes::get(HttpRequest& request)
                                 "File not available");
     }
 
-    request.setContentType(contentType(*name));
+    request.setContentType(contentType(contentName(*name)));
+    if (isGzipped(*name)) {
+        request.setHeader("Content-Encoding", "gzip");
+    }
     std::vector<char> buffer(kChunkBytes);
     for (;;) {
         auto count = file->read(buffer);

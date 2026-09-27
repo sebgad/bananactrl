@@ -14,6 +14,20 @@ namespace banana::storage {
 /// Committed to flash every kSyncEveryRows rows, not per row: a LittleFS sync of a partly filled block
 /// rewrites that block (43-49 ms, up to 320 ms with a metadata compaction, measured), which blocked the
 /// heater task on every tick. A reset loses at most the last kSyncEveryRows rows.
+/// Receives every row written to data.csv (live view in the web UI). Called from the heater task: keep it
+/// short.
+class IRowListener {
+public:
+    IRowListener() = default;
+    IRowListener(const IRowListener&) = default;
+    IRowListener& operator=(const IRowListener&) = default;
+    IRowListener(IRowListener&&) = default;
+    IRowListener& operator=(IRowListener&&) = default;
+    virtual ~IRowListener() = default;
+
+    virtual void onRow(const csv::Row& row) = 0;
+};
+
 class MeasurementRecorder {
 public:
     static constexpr unsigned kSyncEveryRows = 10; ///< 4.5 s
@@ -22,7 +36,8 @@ public:
                                                             const csv::Header& header);
 
     /// Row times are relative to the first row (the Arduino file started at 0 when the timers started).
-    [[nodiscard]] Result<void> append(csv::Row row);
+    /// Returns the row as written (with the relative time).
+    [[nodiscard]] Result<csv::Row> append(csv::Row row);
 
 private:
     explicit MeasurementRecorder(File file) : file_(std::move(file)) {}

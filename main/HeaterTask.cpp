@@ -148,9 +148,16 @@ void HeaterTask::store(const control::ProcessSnapshot& snapshot)
                                 .heaterPercent = snapshot.heaterPercent,
                                 .target = snapshot.target,
                                 .brewing = snapshot.brewing};
-    if (auto res = recorder->append(row); !res && !storeFailed_) {
-        ESP_LOGE(kTag, "data.csv write failed: %s", esp_err_to_name(res.error()));
-        storeFailed_ = true; // log once
+    auto written = recorder->append(row);
+    if (!written) {
+        if (!storeFailed_) {
+            ESP_LOGE(kTag, "data.csv write failed: %s", esp_err_to_name(written.error()));
+            storeFailed_ = true; // log once
+        }
+        return;
+    }
+    if (storage::IRowListener* listener = rowListener_.load(); listener != nullptr) {
+        listener->onRow(*written);
     }
 }
 

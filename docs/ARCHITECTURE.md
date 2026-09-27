@@ -9,10 +9,10 @@ pure logic and run in the host unit tests (`test/host`).
 flowchart TD
     main["<b>main</b><br/>App (composition root)<br/>HeaterTask"]
 
-    web["<b>banana_web</b><br/>WebServer, HttpRequest<br/>ApiRoutes, StaticFileRoutes, OtaRoutes<br/>OtaUpdater · WebPaths, LiveValues (host)"]
+    web["<b>banana_web</b><br/>WebServer, HttpRequest<br/>ApiRoutes, StaticFileRoutes, OtaRoutes, EventStream<br/>OtaUpdater · WebPaths, LiveValues (host)"]
     net["<b>banana_net</b><br/>WifiManager, MdnsService, TimeSync"]
-    storage["<b>banana_storage</b><br/>LittleFs, Nvs, File<br/>FileLogger, MeasurementRecorder<br/>MeasurementCsv (host)"]
-    config["<b>banana_config</b><br/>Config (host), ConfigJson (host)<br/>ConfigStore"]
+    storage["<b>banana_storage</b><br/>LittleFs, Nvs, NvsNamespace, File<br/>FileLogger, MeasurementRecorder<br/>MeasurementCsv (host)"]
+    config["<b>banana_config</b><br/>Config (host), ConfigJson (host)<br/>ConfigStore (NVS)"]
     control["<b>banana_control</b> (host)<br/>ControlLoop, PidController<br/>BrewFeedForward, BrewDetector<br/>Diagnostics, StatusIndicator<br/>IHeaterControl"]
     drivers["<b>banana_drivers</b><br/>Ads1115, Ssr, RgbLed<br/>TemperatureConverter, Pt1000 (host)"]
     hal["<b>banana_hal</b><br/>GpioInput/Output, I2cBus/Device, Ledc<br/>PeriodicTimer · rtos: Task, EventGroup, Watchdog"]
@@ -46,7 +46,7 @@ flowchart LR
         pump["Pump relay<br/>GPIO 17"]
         ssr["SSR<br/>GPIO 21"]
         led["RGB LED"]
-        flash[("Flash<br/>LittleFS /fs · OTA slots")]
+        flash[("Flash<br/>LittleFS /fs · NVS · OTA slots")]
     end
 
     subgraph ISR["Interrupts"]
@@ -82,11 +82,15 @@ flowchart LR
     heater -- "data.csv, sync every 10 rows" --> flash
     heater <--> snap
     heater -. "log" .-> ring
+    heater -- "each data.csv row" --> rowbuf[("EventStream<br/>pending rows")]
+    esptimer -- "1 s: queue work" --> httpd
+    rowbuf --> httpd
 
     httpd -- "snapshot() /lastvalues.json" --> snap
     httpd -- "requestConfig()" --> snap
     httpd -- "ConfigChanged" --> ev
-    httpd -- "params.json, uploads, OTA image,<br/>read pages/data.csv/logs" --> flash
+    httpd -- "settings (NVS), uploads, OTA image,<br/>read pages/data.csv/logs" --> flash
+    httpd -- "/events: values + rows (SSE)" --> browser(["Browser"])
     net <--> httpd
     net -. "INetworkStatus<br/>(Wi-Fi fault = purple LED)" .-> heater
 
@@ -100,8 +104,8 @@ flowchart LR
 |-------------|------|-------------|-------------|------------------------------------------------------------------------|
 | **heater**  | 5    | 1 (pinned)  | 1756 B / 4096 | `HeaterTask`: ADC read, PID, SSR, LED, brew detection, diagnostics, `data.csv`; subscribed to the task watchdog (75 s) |
 | **filelog** | 2    | 1 (pinned)  | 1800 B / 4096 | `FileLogger`: ring buffer → `logfile_recent.txt`, rotation            |
-| httpd       | 5    | any         | 7268 B / 8192 | `esp_http_server`: all web routes, OTA and file uploads               |
-| esp_timer   | 22   | 0           | 2816 B      | 450 ms tick (`PeriodicTimer`), 60 s health log                         |
+| httpd       | 5    | any         | 7268 B / 8192 | `esp_http_server`: all web routes, OTA and file uploads, `/events` broadcast |
+| esp_timer   | 22   | 0           | 2816 B      | 450 ms tick (`PeriodicTimer`), 60 s health log, 1 s `/events` trigger  |
 | Tmr Svc     | 1    | any         | 1472 B      | FreeRTOS timer daemon: carries `EventGroup::setFromIsr()` to the event group |
 | sys_evt     | 20   | 0           | 1492 B      | default event loop: `WifiManager::onEvent()` (connect, reconnect, got IP) |
 | wifi        | 23   | 0           | 3232 B      | Wi-Fi driver                                                           |
@@ -123,7 +127,9 @@ pinning does not shorten the stalls of the heater task, it only avoids the overl
 - The heater task is the only task that touches the ADC, SSR and LED; everything else talks to it through the
   event group (`requestConfig()` + `ConfigChanged`) or reads the mutex-protected `ProcessSnapshot`.
 - ISRs only set event bits (IRAM), no I2C or logging.
-- `ConfigStore` has its own mutex (web saves vs. boot load); `params.json` is written as a temp file + rename.
+- `ConfigStore` has its own mutex (web saves vs. boot load); the settings are one NVS blob (atomic replace).
+- `EventStream`: the heater task only appends rows to a mutex-protected buffer (dropped when nobody listens);
+  subscribing and sending run in the httpd task, so a slow browser never blocks the heater.
 - Every task logs through the `vprintf` hook into the ring buffer; only `filelog` writes the log file, so a
   slow flash write never blocks the logging task (full buffer → dropped lines, counted).
 - Flash writes from a task on the other core (httpd: settings, uploads, OTA) can still overlap an ADS1115

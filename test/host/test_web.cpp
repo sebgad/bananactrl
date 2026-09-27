@@ -1,3 +1,5 @@
+#include <array>
+
 #include "banana/web/LiveValues.hpp"
 #include "banana/web/WebPaths.hpp"
 
@@ -81,6 +83,37 @@ TEST(LiveValues, ArduinoKeyNames)
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorIntegrator"].as<float>(), 1.5F);
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorDiff"].as<float>(), -0.5F);
     EXPECT_EQ(doc["WiFi"]["SignalStrength in %"].as<int>(), 64);
+}
+
+TEST(WebPaths, BundledChartLibraryIsGzipped)
+{
+    const auto file = staticFileFor("/uPlot.min.js");
+    ASSERT_TRUE(file.has_value());
+    EXPECT_TRUE(isGzipped(*file));
+    EXPECT_STREQ(contentType(contentName(*file)), "text/javascript");
+    EXPECT_FALSE(isGzipped(*staticFileFor("/graphs.html")));
+    EXPECT_EQ(contentName("index.html"), "index.html");
+}
+
+TEST(LiveValues, RowsAsJsonArray)
+{
+    const std::array rows{
+        banana::storage::csv::Row{
+            .seconds = 0.0F, .celsius = 26.674F, .heaterPercent = 100.0F, .target = 83.0F, .brewing = false},
+        banana::storage::csv::Row{
+            .seconds = 0.45F, .celsius = 26.68F, .heaterPercent = 99.5F, .target = 83.0F, .brewing = true},
+    };
+    EXPECT_EQ(rowsJson(rows), "[[0.000,26.67,100.00,83.00,0],[0.450,26.68,99.50,83.00,1]]");
+    EXPECT_EQ(rowsJson({}), "[]");
+
+    JsonDocument doc;
+    ASSERT_EQ(deserializeJson(doc, rowsJson(rows)), DeserializationError::Ok);
+    EXPECT_EQ(doc.size(), 2U);
+}
+
+TEST(LiveValues, ServerSentEventFormat)
+{
+    EXPECT_EQ(sseEvent("values", R"({"Time":1})"), "event: values\ndata: {\"Time\":1}\n\n");
 }
 
 } // namespace

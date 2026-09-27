@@ -2,27 +2,57 @@
 
 #include "banana/config/ConfigJson.hpp"
 #include "banana/storage/File.hpp"
+#include "banana/storage/NvsNamespace.hpp"
 
 namespace banana::config {
+namespace {
+
+constexpr const char* kNamespace = "banana";
+constexpr const char* kKey = "params";
+
+Result<std::string> readLegacyFile(const std::string& path)
+{
+    auto file = storage::File::open(path, "r");
+    if (!file) {
+        return fail(file.error());
+    }
+    return file->readAll();
+}
+
+} // namespace
 
 ConfigStore::Loaded ConfigStore::load()
 {
     const std::scoped_lock lock{mutex_};
     Loaded loaded;
+    bool writeBack = false;
 
-    auto file = storage::File::open(path_, "r");
-    auto content = file ? file->readAll() : Result<std::string>{fail(file.error())};
-    auto parsed = content ? fromJson(*content) : Result<ParsedConfig>{fail(content.error())};
+    auto nvs = storage::NvsNamespace::open(kNamespace);
+    auto stored = nvs ? nvs->readBlob(kKey) : Result<std::string>{fail(nvs.error())};
+    auto parsed = stored ? fromJson(*stored) : Result<ParsedConfig>{fail(stored.error())};
 
-    if (!parsed) {
-        loaded.source = Source::Defaults;
-    } else {
+    if (parsed) {
         loaded.config = parsed->config;
-        loaded.source = parsed->complete ? Source::File : Source::FileCompleted;
+        loaded.source = parsed->complete ? Source::Stored : Source::StoredCompleted;
+        writeBack = !parsed->complete;
+    } else if (auto legacy = readLegacyFile(legacyFile_).and_then([](const std::string& json) {
+                   return fromJson(json);
+               })) {
+        loaded.config = legacy->config;
+        loaded.source = Source::Imported;
+        writeBack = true;
+    } else {
+        loaded.source = Source::Defaults;
+        writeBack = true;
     }
-    if (loaded.source != Source::File) {
+
+    if (writeBack) {
         if (auto res = saveLocked(loaded.config); !res) {
             loaded.writeError = res.error();
+        } else if (loaded.source == Source::Imported) {
+            // Keep the file for reference. A failed rename is harmless: NVS now holds a configuration, so the
+            // file is not imported again.
+            [[maybe_unused]] const auto renamed = storage::rename(legacyFile_, legacyFile_ + ".imported");
         }
     }
     current_ = loaded.config;
@@ -52,20 +82,11 @@ Result<Config> ConfigStore::reset()
 
 Result<void> ConfigStore::saveLocked(const Config& config)
 {
-    const std::string temporary = path_ + ".tmp";
-    {
-        auto file = storage::File::open(temporary, "w");
-        if (!file) {
-            return fail(file.error());
-        }
-        if (auto res = file->write(toJson(config)); !res) {
-            return res;
-        }
-        if (auto res = file->flush(); !res) {
-            return res;
-        }
-    } // closed before the rename
-    if (auto res = storage::rename(temporary, path_); !res) {
+    auto nvs = storage::NvsNamespace::open(kNamespace);
+    if (!nvs) {
+        return fail(nvs.error());
+    }
+    if (auto res = nvs->writeBlob(kKey, toJson(config)); !res) {
         return res;
     }
     current_ = config;

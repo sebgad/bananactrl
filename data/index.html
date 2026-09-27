@@ -8,107 +8,108 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-  <script type="text/javascript" src="https://www.google.com/jsapi"></script>
-
   <script type="text/javascript">
-   google.charts.load('current', {'packages':['gauge', 'corechart']});
-   google.charts.setOnLoadCallback(drawChart);
+  // Dial gauges drawn as SVG (no external chart library: works in SoftAP mode without internet).
+  // Bands as in the former Google gauges: yellow below target-1, green target+-1, red above.
+  const SVG_NS = "http://www.w3.org/2000/svg";
 
-  function drawChart() {
-    var dataTemp = google.visualization.arrayToDataTable([
-      ['Label', 'Value'],
-      ['Temp', 0.0],
-    ]);
+  function polar(cx, cy, r, fraction) {
+    const angle = Math.PI * (1 - fraction); // 0 = left, 1 = right
+    return [cx + r * Math.cos(angle), cy - r * Math.sin(angle)];
+  }
 
-    var dataPWM = google.visualization.arrayToDataTable([
-      ['Label', 'Value'],
-      ['PWM', 0.0],
-    ]);
+  function arcPath(cx, cy, r, from, to) {
+    const [x1, y1] = polar(cx, cy, r, from);
+    const [x2, y2] = polar(cx, cy, r, to);
+    return "M" + x1 + " " + y1 + " A" + r + " " + r + " 0 0 1 " + x2 + " " + y2;
+  }
 
-    var formatterTemp = new google.visualization.NumberFormat({
-      suffix: ' \°C',
-      fractionDigits: 2,
-    });
+  function createGauge(elementId, label, max, unit) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 200 125");
+    svg.setAttribute("width", "260");
+    const bands = document.createElementNS(SVG_NS, "g");
+    const needle = document.createElementNS(SVG_NS, "line");
+    needle.setAttribute("x1", 100); needle.setAttribute("y1", 105);
+    needle.setAttribute("stroke", "#c0392b"); needle.setAttribute("stroke-width", 3);
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", 100); text.setAttribute("y", 95); text.setAttribute("text-anchor", "middle");
+    text.setAttribute("font-size", 18);
+    const caption = document.createElementNS(SVG_NS, "text");
+    caption.setAttribute("x", 100); caption.setAttribute("y", 122); caption.setAttribute("text-anchor", "middle");
+    caption.setAttribute("font-size", 12); caption.textContent = label;
+    svg.append(bands, needle, text, caption);
+    document.getElementById(elementId).appendChild(svg);
 
-    var formatterPWM = new google.visualization.NumberFormat({
-      suffix: '\%',
-      fractionDigits: 2,
-    });
-
-    formatterTemp.format(dataTemp, 1);
-    formatterPWM.format(dataPWM, 1);
-
-    var chartTemp = new google.visualization.Gauge(document.getElementById('gauge_Temp'));
-    var chartPWM = new google.visualization.Gauge(document.getElementById('gauge_PWM'));
-
-    setInterval(function() {
-      var xhr=new XMLHttpRequest();
-      xhr.open("GET","lastvalues.json");
-
-      var data;
-      xhr.onload= function() {
-        var str_buf = xhr.responseText;
-        const obj_json_req = JSON.parse(str_buf);
-
-        var optionsTemp = {
-          width: 350, height: 150,
-          greenFrom: obj_json_req["PID"]["TargetValue"]-1, greenTo: obj_json_req["PID"]["TargetValue"]+1,
-          redFrom: obj_json_req["PID"]["TargetValue"]+1, redTo: 120,
-          yellowFrom:0, yellowTo: obj_json_req["PID"]["TargetValue"]-1,
-          minorTicks:10,
-          min:0, max:120,
-        };
-
-        var optionsPWM = {
-          width: 350, height: 150,
-          yellowFrom: 0, yellowTo:50,
-          redFrom:50, redTo:100,
-          minorTicks: 10,
-          min:0, max:100,
-        };
-
-        dataTemp.setValue(0, 1, obj_json_req["Temperature"]);
-        dataPWM.setValue(0, 1, obj_json_req["PID"]["TargetPWM"])
-
-        formatterTemp.format(dataTemp, 1);
-        formatterPWM.format(dataPWM, 1)
-
-        chartTemp.draw(dataTemp, optionsTemp);
-        chartPWM.draw(dataPWM, optionsPWM);
-
-        var obj_div = document.getElementById("pid_values");
-
-        for(var str_key in obj_json_req["PID"]){
-          if (str_key != "TargetPWM"){
-            var obj_sub_div = document.getElementById(str_key);
-            if(!obj_sub_div){
-              // create label if not already exists
-              var obj_sub_div = document.createElement("div");
-                obj_sub_div.id = str_key;
-                obj_div.appendChild(obj_sub_div);
-            }
-            obj_sub_div.innerHTML = "<p style='width:20%;'> <b>" + str_key + "</b> </p><p style='width:20%;'>" + obj_json_req["PID"][str_key] + "</p>";
-          }
+    return {
+      setBands(list) { // [[from, to, colour], ...] in value units
+        bands.replaceChildren();
+        const base = document.createElementNS(SVG_NS, "path");
+        base.setAttribute("d", arcPath(100, 105, 80, 0, 1));
+        base.setAttribute("stroke", "#ddd"); base.setAttribute("stroke-width", 14); base.setAttribute("fill", "none");
+        bands.appendChild(base);
+        for (const [from, to, colour] of list) {
+          const f = Math.max(0, Math.min(1, from / max)), t = Math.max(0, Math.min(1, to / max));
+          if (t <= f) continue;
+          const band = document.createElementNS(SVG_NS, "path");
+          band.setAttribute("d", arcPath(100, 105, 80, f, t));
+          band.setAttribute("stroke", colour); band.setAttribute("stroke-width", 14); band.setAttribute("fill", "none");
+          bands.appendChild(band);
         }
+      },
+      setValue(value) {
+        const [x, y] = polar(100, 105, 70, Math.max(0, Math.min(1, value / max)));
+        needle.setAttribute("x2", x); needle.setAttribute("y2", y);
+        text.textContent = value.toFixed(2) + " " + unit;
+      },
+    };
+  }
 
-		var obj_div = document.getElementById("wifi_values");
-
-        for(var str_key in obj_json_req["WiFi"]){
-          var obj_sub_div = document.getElementById(str_key);
-          if(!obj_sub_div){
-            // create label if not already exists
-            var obj_sub_div = document.createElement("div");
-            obj_sub_div.id = str_key;
-            obj_div.appendChild(obj_sub_div);
-          }
-
-          obj_sub_div.innerHTML = "<p style='width:20%;'> <b>" + str_key + "</b> </p><p style='width:20%;'>" + obj_json_req["WiFi"][str_key] + "</p>";
-        }
+  function showTable(elementId, values, skip) {
+    const div = document.getElementById(elementId);
+    for (const key in values) {
+      if (key === skip) continue;
+      let row = document.getElementById(key);
+      if (!row) {
+        row = document.createElement("div");
+        row.id = key;
+        div.appendChild(row);
       }
-      xhr.send();
-    }, 2000);
-   }
+      row.innerHTML = "<p style='width:20%;'> <b>" + key + "</b> </p><p style='width:20%;'>" + values[key] + "</p>";
+    }
+  }
+
+  let gaugeTemp, gaugePwm;
+
+  function showValues(values) {
+    const target = values["PID"]["TargetValue"];
+    gaugeTemp.setBands([[0, target - 1, "#f1c40f"], [target - 1, target + 1, "#27ae60"], [target + 1, 120, "#e74c3c"]]);
+    gaugeTemp.setValue(values["Temperature"]);
+    gaugePwm.setValue(values["PID"]["TargetPWM"]);
+    showTable("pid_values", values["PID"], "TargetPWM");
+    showTable("wifi_values", values["WiFi"], "");
+  }
+
+  function poll() { // fallback without server-sent events
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "lastvalues.json");
+    xhr.onload = function() { showValues(JSON.parse(xhr.responseText)); };
+    xhr.send();
+  }
+
+  window.onload = function() {
+    gaugeTemp = createGauge("gauge_Temp", "Temp", 120, "\u00b0C");
+    gaugePwm = createGauge("gauge_PWM", "PWM", 100, "%");
+    gaugePwm.setBands([[0, 50, "#f1c40f"], [50, 100, "#e74c3c"]]);
+    poll();
+    if (window.EventSource) {
+      // pushed once per second by the ESP (/events)
+      const events = new EventSource("events");
+      events.addEventListener("values", function(event) { showValues(JSON.parse(event.data)); });
+    } else {
+      setInterval(poll, 2000);
+    }
+  };
  </script>
 </head>
 <body>

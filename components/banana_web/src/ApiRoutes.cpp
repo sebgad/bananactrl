@@ -41,7 +41,7 @@ esp_err_t ApiRoutes::lastValues(HttpRequest& request)
 
 esp_err_t ApiRoutes::params(HttpRequest& request)
 {
-    // From memory, not the file: the Wi-Fi password is never sent
+    // From memory: the Wi-Fi password is never sent
     return request.send(Status::Ok, "application/json", config::toPublicJson(store_->current()));
 }
 
@@ -61,7 +61,7 @@ esp_err_t ApiRoutes::paramUpdate(HttpRequest& request)
     if (auto res = store_->save(*updated); !res) {
         ESP_LOGE(kTag, "saving parameters failed: %s", esp_err_to_name(res.error()));
         return request.sendText(Status::InternalError,
-                                "Parameters are not updated: params.json not writable");
+                                "Parameters are not updated: settings storage not writable");
     }
     heater_->requestConfig(*updated);
     ESP_LOGI(kTag, "parameters updated");
@@ -77,7 +77,8 @@ esp_err_t ApiRoutes::paramReset(HttpRequest& request)
     auto defaults = store_->reset();
     if (!defaults) {
         ESP_LOGE(kTag, "resetting parameters failed: %s", esp_err_to_name(defaults.error()));
-        return request.sendText(Status::InternalError, "Parameters are not reset: params.json not writable");
+        return request.sendText(Status::InternalError,
+                                "Parameters are not reset: settings storage not writable");
     }
     heater_->requestConfig(*defaults);
     ESP_LOGI(kTag, "parameters reset to defaults");

@@ -11,7 +11,7 @@ namespace banana::web {
 
 struct StaticFile {
     std::string_view uri;
-    std::string_view file; ///< relative to the LittleFS mount point
+    std::string_view file; ///< relative to the LittleFS mount point; `.gz` = sent with Content-Encoding gzip
 };
 
 /// The files the Arduino firmware served (only these: params.json has its own route without the password).
@@ -26,10 +26,23 @@ inline constexpr std::array kStaticFiles{
     StaticFile{.uri = "/favicon-16x16.png", .file = "favicon-16x16.png"},
     StaticFile{.uri = "/favicon-32x32.png", .file = "favicon-32x32.png"},
     StaticFile{.uri = "/apple-touch-icon.png", .file = "apple-touch-icon.png"},
+    StaticFile{.uri = "/uPlot.min.js", .file = "uPlot.min.js.gz"}, // bundled: graphs work without internet
+    StaticFile{.uri = "/uPlot.min.css", .file = "uPlot.min.css"},
     StaticFile{.uri = "/data.csv", .file = "data.csv"},
     StaticFile{.uri = "/recentlogfile.txt", .file = "logfile_recent.txt"},
     StaticFile{.uri = "/lastlogfile.txt", .file = "logfile_last.txt"},
 };
+
+[[nodiscard]] constexpr bool isGzipped(std::string_view file)
+{
+    return file.ends_with(".gz");
+}
+
+/// File name without a `.gz` suffix (determines the content type).
+[[nodiscard]] constexpr std::string_view contentName(std::string_view file)
+{
+    return isGzipped(file) ? file.substr(0, file.size() - 3) : file;
+}
 
 /// Files written by the firmware itself: an upload would bypass the running configuration or collide
 /// with the open recorder/logger.
@@ -60,6 +73,9 @@ inline constexpr std::array<std::string_view, 4> kRuntimeFiles{"params.json", "d
     };
     if (endsWith(".html")) {
         return "text/html";
+    }
+    if (endsWith(".js")) {
+        return "text/javascript";
     }
     if (endsWith(".css")) {
         return "text/css";

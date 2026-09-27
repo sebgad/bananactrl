@@ -28,6 +28,7 @@ class HttpRequest {
 public:
     explicit HttpRequest(httpd_req_t* request) : req_(request) {}
 
+    [[nodiscard]] httpd_req_t* raw() const { return req_; }
     [[nodiscard]] std::string_view uri() const { return req_->uri; }
     [[nodiscard]] std::size_t contentLength() const { return req_->content_len; }
     [[nodiscard]] std::optional<std::string> header(const char* name) const;
@@ -67,6 +68,9 @@ public:
     WebServer(WebServer&& other) noexcept;
     WebServer& operator=(WebServer&& other) noexcept;
     ~WebServer();
+
+    /// For httpd_queue_work() and async requests. Stays valid when the WebServer object is moved.
+    [[nodiscard]] httpd_handle_t handle() const { return handle_; }
 
     /// `uri` may end with a `*` wildcard. Handlers are matched in registration order.
     template <typename T, esp_err_t (T::*Method)(HttpRequest&)>

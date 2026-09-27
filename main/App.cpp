@@ -26,6 +26,7 @@ constexpr std::chrono::seconds kWatchdogTimeout{75};      // WDT_Timeout
 constexpr std::chrono::seconds kWifiTimeout{18};          // connectWiFi(3, 6000)
 constexpr std::chrono::seconds kTimeSyncTimeout{10};
 constexpr std::chrono::seconds kHealthPeriod{60};
+constexpr std::chrono::milliseconds kEventPeriod{1000}; // /events: live values and new data.csv rows
 // Heater task and log writer share a core: they then take turns (the heater has the higher priority), so a
 // log flash write rarely overlaps an ADS1115 read. Bench, stress build (a log line per tick), 170 s: I2C
 // NACKs 16 unpinned, 23 with the logger on core 0, 0-1 on core 1. Wi-Fi runs on core 0.
@@ -83,18 +84,21 @@ config::Config loadConfig(config::ConfigStore& store)
 {
     const auto loaded = store.load();
     switch (loaded.source) {
-    case config::ConfigStore::Source::File:
-        ESP_LOGI(kTag, "configuration loaded from %s", store.path().c_str());
+    case config::ConfigStore::Source::Stored:
+        ESP_LOGI(kTag, "configuration loaded from NVS");
         break;
-    case config::ConfigStore::Source::FileCompleted:
-        ESP_LOGW(kTag, "missing keys in %s: defaults used and written back", store.path().c_str());
+    case config::ConfigStore::Source::StoredCompleted:
+        ESP_LOGW(kTag, "missing keys in the stored configuration: defaults used and written back");
+        break;
+    case config::ConfigStore::Source::Imported:
+        ESP_LOGI(kTag, "configuration imported from %s into NVS", store.legacyFile().c_str());
         break;
     case config::ConfigStore::Source::Defaults:
-        ESP_LOGW(kTag, "%s missing or invalid: factory settings used and written", store.path().c_str());
+        ESP_LOGW(kTag, "no configuration stored: factory settings used and written");
         break;
     }
     if (loaded.writeError != ESP_OK) {
-        ESP_LOGE(kTag, "writing %s failed: %s", store.path().c_str(), esp_err_to_name(loaded.writeError));
+        ESP_LOGE(kTag, "writing the configuration to NVS failed: %s", esp_err_to_name(loaded.writeError));
     }
     return loaded.config;
 }
@@ -150,7 +154,7 @@ App::App()
       tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer")),
       health_(orAbort(hal::PeriodicTimer::create("health", &App::logHealth, this), "health timer")),
       apiRoutes_(configStore_, heaterTask_, wifi_), otaRoutes_(std::string{fs_.mountPoint()}),
-      staticRoutes_(std::string{fs_.mountPoint()})
+      staticRoutes_(std::string{fs_.mountPoint()}), eventStream_(heaterTask_, wifi_)
 {
 }
 
@@ -242,6 +246,11 @@ void App::startWebServer()
         return;
     }
     // The static file wildcard last: handlers are matched in registration order
+    if (auto res = eventStream_.start(*server, kEventPeriod); !res) {
+        ESP_LOGE(kTag, "event stream failed: %s", esp_err_to_name(res.error())); // pages fall back to polling
+    } else {
+        heaterTask_.attachRowListener(&eventStream_);
+    }
     for (auto res : {apiRoutes_.registerOn(*server), otaRoutes_.registerOn(*server),
                      staticRoutes_.registerOn(*server)}) {
         if (!res) {

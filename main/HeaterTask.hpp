@@ -47,6 +47,8 @@ public:
     [[nodiscard]] control::ProcessSnapshot snapshot() const override;
     /// Appends a row to data.csv on every 450 ms tick (STORE). The recorder must outlive the task.
     void attachRecorder(storage::MeasurementRecorder* recorder) { recorder_.store(recorder); }
+    /// Gets every recorded row (web UI live view). Must outlive the task.
+    void attachRowListener(storage::IRowListener* listener) { rowListener_.store(listener); }
 
     /// ISR / timer trampolines, `arg` is the HeaterTask.
     static void onSampleReadyIsr(void* arg);
@@ -65,6 +67,7 @@ private:
     control::ControlLoop loop_;
     std::uint32_t reportTicks_ = 0;
     std::atomic<storage::MeasurementRecorder*> recorder_{nullptr};
+    std::atomic<storage::IRowListener*> rowListener_{nullptr};
     bool storeFailed_ = false;
 
     std::mutex configMutex_;

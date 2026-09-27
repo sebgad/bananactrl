@@ -434,8 +434,26 @@ OTA from the web UI boots the new image.
    read. Stress build (log line per tick, 170 s): I2C NACKs 16 unpinned, 23 on core 0, 0–1 on core 1;
    normal build: 0 in 3 min. Before, the heater task landed on core 1 only through ESP-IDF's automatic FPU
    pinning. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-7. Optional follow-ups: bundle a chart library into LittleFS (graphs in SoftAP mode), SSE endpoint instead
-   of polling, config in NVS, root cause of the I2C NACK during flash writes.
+7. Follow-ups ✅ (bench; SSE and pages pending the Wi-Fi test on the machine):
+   - **Chart library bundled:** Google Charts may not be self-hosted, so `graphs.html` uses uPlot 1.6.32
+     (MIT, `third_party/uplot`, 22 kB gzip in LittleFS, served with `Content-Encoding: gzip`), and
+     `index.html` draws its two gauges as SVG (same colour bands). No page needs internet any more.
+     `graphs.html` also no longer reads the header lines as data rows.
+   - **SSE instead of polling:** `web::EventStream`, `GET /events`, once per second `values` (the
+     `/lastvalues.json` object) and `rows` (the `data.csv` rows since the last event, same numbers as the file;
+     the heater task hands each written row to `IRowListener`). Before, `graphs.html` downloaded the whole
+     `data.csv` every 3 s (hundreds of kB after an hour). Async requests keep the socket (excluded from the
+     LRU purge); subscribe and send both run in the httpd task (`httpd_queue_work`), max 3 subscribers, the
+     oldest is dropped. Both pages fall back to polling without `EventSource`.
+   - **Config in NVS:** `ConfigStore` keeps the same JSON as a blob in NVS (`banana`/`params`): survives
+     `idf.py flash` / `storage-flash`, atomic replace. A `params.json` is imported once (renamed
+     `.imported`). Bench: import → reload from NVS → still there after rewriting LittleFS.
+   - **I2C NACK root cause:** not found. The driver writes the whole command list before starting the
+     hardware, so a stalled task cannot split a transfer; `CONFIG_I2C_ISR_IRAM_SAFE` and a longer timeout did
+     not help; it needs a flash write from the other core overlapping the read. On the machine board: 0 NACKs
+     in 7 minutes (heat-up), so it is bench-specific (wiring). Closing it would need a logic analyser on
+     SDA/SCL plus a GPIO toggled around flash writes. The retry and the core pinning stay.
+   - Still open: side-by-side comparison with the Arduino firmware, 24 h soak.
 
 ---
 
