@@ -1,0 +1,376 @@
+# Migration: coffee_ctrl_main (Arduino) → bananactrl (ESP-IDF v6, modern C++)
+
+Source: `~/Programmierprojekte/Arduino/coffee_ctrl_main` (Arduino-ESP32 core 2.x, board `esp32thing_plus`, partition `large_spiffs`)
+Target: this repo, plain ESP-IDF v6 + CMake, no Arduino component, **C++ throughout, object-oriented design**.
+
+Strategy: **keep the behaviour, change the structure.** The firmware must do exactly what the Arduino
+version does (same web UI, same `params.json`, same CSV). The code, though, is rebuilt as classes with clear
+ownership instead of globals + `setup()`/`loop()`. Each phase ends with something that builds and
+runs on the board. Keep the Arduino firmware on a second board (or keep the `.bin`) as a reference.
+
+> ESP-IDF v6.1 is installed at `/opt/esp/esp-idf-v6.1` (tools in `~/.espressif`). Points marked
+> **[v6-check]** are 5.x→6.x changes to check against the official *Migration Guides → 6.0* page
+> (and the header files under `/opt/esp/esp-idf-v6.1/components`) before you implement them.
+
+---
+
+## 1. C++ design rules (apply in every phase)
+
+**Language & tooling**
+- All project code is `.cpp`/`.hpp`. The only C left is ESP-IDF itself, and it is always hidden behind a class.
+- ESP-IDF v6.1 compiles C++ with `-std=gnu++26` (GCC 15.2) by default, which was checked on this machine.
+  No override is needed; `std::expected`, `std::span` and `std::format` are all available.
+  **Avoid `<format>` in firmware code:** it pulls in ~300 KB of libstdc++ locale code. Use `snprintf`.
+- Commit `.clang-format` and `.clang-tidy` (`modernize-*`, `cppcoreguidelines-*`, `readability-*`, `bugprone-*`).
+- Everything lives in `namespace banana` with sub-namespaces per layer (`banana::hal`, `banana::drivers`, …).
+
+**Ownership & lifetime**
+- **No mutable globals.** One composition root (`App`) owns every object as a member. `app_main()`
+  only does `static banana::App app; app.run();`.
+- Dependencies are passed **by reference in the constructor** (constructor injection), never looked up globally.
+- **RAII for every IDF handle.** Examples: I2C bus/device, LEDC channel, `esp_timer`, httpd, mounted
+  FS, open file, OTA handle, mutex and task. The destructor releases the handle. Wrappers are
+  non-copyable; make them movable only where it helps.
+- No raw `new`/`delete`. Use `std::unique_ptr` where heap allocation is needed. Keep the control
+  path allocation-free (`std::array` instead of `float**` tables).
+
+**Error handling**
+- Exceptions stay off (the IDF default, which keeps binaries small), so failures are values:
+  `std::expected<T, esp_err_t>` (alias `banana::Result<T>`). `Result<void>` is for operations with
+  no return value.
+- Constructors can't fail. Objects that need hardware init use a **static factory**:
+  `static Result<Ads1115> create(hal::I2cBus&, Ads1115::Config)`.
+- `ESP_ERROR_CHECK` only in `App` for truly fatal boot errors.
+
+**Types**
+- `enum class` for state, error and colour. Bit flags go through a small `Flags<E>` helper
+  or `std::bitset`, not raw `unsigned int`.
+- Pins and constants as `constexpr` in a `banana::board` namespace (`constexpr gpio_num_t kSsrPwm = GPIO_NUM_21;`).
+- `std::string`/`std::string_view` instead of `String`/`const char*`. Use `std::span` for buffers
+  and `std::chrono` durations for times (`200ms`, `450ms`, `3600s`).
+- `const`-correct getters, `[[nodiscard]]` on everything that returns `Result`.
+
+**Polymorphism where it pays**
+- Interfaces (pure virtual) at the hardware boundary so logic can be tested on the host with fakes:
+  `ITemperatureSensor`, `IPwmOutput`, `IClock`.
+- **Strategy pattern** replaces `#ifdef Pt1000_CONV_*`: `ITemperatureConverter` →
+  `LinearConverter`, `QuadraticConverter`, `LookupTableConverter`.
+- No virtual calls or heap in ISRs.
+
+**RTOS & C callbacks**
+- `rtos::Task` base class: `start(name, stack, prio)` → `xTaskCreate` with a static trampoline,
+  and the derived class overrides `void run()`.
+- Every C callback (GPIO ISR, `esp_timer`, event handler, httpd handler, log vprintf) goes through a
+  `static` member trampoline with `this` as `void* arg`.
+- ISRs are `IRAM_ATTR` and do nothing except notify a task / set an event bit.
+- Shared state: `std::mutex` + `std::scoped_lock` (supported via IDF's pthread layer) or an
+  `rtos::Mutex` wrapper. Use `portMUX` spinlocks only for data shared with an ISR.
+
+---
+
+## 2. Target architecture
+
+```
+                    ┌──────────────────────── App (composition root) ─────────────────────────┐
+                    │ owns all objects below, wires dependencies, starts tasks                 │
+                    └──────────────────────────────────────────────────────────────────────────┘
+ services     WifiManager  MdnsService  TimeSync  WebServer ─┬─ StaticFileRoutes
+                                                            ├─ ApiRoutes (lastvalues, params)
+                                                            └─ OtaRoutes ── OtaUpdater
+ control      HeaterController (rtos::Task)   ── PidController, Diagnostics, StatusIndicator
+              BrewDetector                     ── debounce pump relay
+              MeasurementRecorder              ── data.csv
+ config       Config (value type)   ConfigStore (JSON ⇄ Config, ArduinoJson)
+ storage      LittleFs (RAII mount)  File (RAII)  FileLogger (rtos::Task, log sink)
+ drivers      Ads1115 : ITemperatureSensor ── ITemperatureConverter (Linear|Quadratic|Lut)
+              Ssr : IPwmOutput     RgbLed (3× PwmChannel + gains)
+ hal          GpioOutput  GpioInput(+ISR)  I2cBus  I2cDevice  LedcTimer  PwmChannel
+              PeriodicTimer(esp_timer)  EventGroup  Mutex  Task  Clock
+```
+
+Dependencies only point downwards. `hal` knows nothing about coffee, and the `control` layer knows
+nothing about ESP-IDF (only interfaces), so it can be unit-tested on the host.
+
+Mapping of the Arduino globals and functions to classes:
+
+| Arduino (`coffee_ctrl_main.ino`)                             | New owner                                         |
+|--------------------------------------------------------------|---------------------------------------------------|
+| `objConfig`, `resetConfiguration/load/saveConfiguration`     | `Config` (defaults as member initialisers) + `ConfigStore` |
+| `bParamFileLocked`                                           | `std::mutex` inside `ConfigStore`                 |
+| `iState`, `objTimerMux`, `onTimerLong`, `onAlertRdy`         | `HeaterController` + `EventGroup` + `PeriodicTimer` |
+| `onPumpRelayChange`, `pump_relay_last_interrupt_time`        | `BrewDetector`                                    |
+| `controlHeating()`, `objPid`, `fTarPwm`, `bTimeOutReached`   | `HeaterController`, `PidController`, `Ssr`        |
+| `setColor()`, `configLED()`, LED channels                    | `RgbLed` (hardware) + `StatusIndicator` (which colour when) |
+| DIAG block in `loop()`, `iErrorId`                           | `Diagnostics` with `enum class Fault` flags       |
+| `writeMeasFile()`, CSV header in `setup()`                   | `MeasurementRecorder`                             |
+| `connectWiFi()`, `calcWifiStrength()`, SoftAP fallback       | `WifiManager`                                     |
+| `configWebserver()`                                          | `WebServer` + route classes                       |
+| OTA lambdas, `Update.h`                                      | `OtaUpdater` (RAII around `esp_ota_handle_t`)     |
+| `vprintf_into_FS()`                                          | `FileLogger`                                      |
+| `fTime`, `fTemp` shared with web server                      | `HeaterController::snapshot()` → `ProcessSnapshot` value struct |
+
+---
+
+## 3. Inventory — API replacements
+
+| Arduino / library                            | ESP-IDF v6 replacement (wrapped in)                                                    |
+|----------------------------------------------|----------------------------------------------------------------------------------------|
+| `millis()`, `delay()`                        | `esp_timer_get_time()` → `hal::Clock` (`std::chrono`), `vTaskDelay`                    |
+| `Serial.print*`                              | `ESP_LOGx`                                                                             |
+| `pinMode/digitalWrite/digitalRead`           | `gpio_config()` etc. → `hal::GpioOutput` / `hal::GpioInput` (`esp_driver_gpio`)         |
+| `attachInterrupt`                            | `gpio_isr_handler_add()` → `hal::GpioInput::onEdge()`                                   |
+| `hw_timer_t` (450 ms)                        | `esp_timer` periodic → `hal::PeriodicTimer`                                            |
+| `ledcSetup/ledcAttachPin/ledcWrite`          | `ledc_timer_config/ledc_channel_config/ledc_set_duty` → `hal::LedcTimer`, `hal::PwmChannel` |
+| legacy `driver/i2c.h` in ADS1115             | `driver/i2c_master.h` → `hal::I2cBus`, `hal::I2cDevice` **[v6-check: legacy removed]** |
+| `WiFi.h`                                     | `esp_wifi` + `esp_netif` + event loop → `WifiManager`                                  |
+| `ESPmDNS`                                    | `espressif/mdns` → `MdnsService`                                                       |
+| `configTime/getLocalTime`                    | `esp_netif_sntp_*` + TZ `CET-1CEST,M3.5.0,M10.5.0/3` → `TimeSync`                      |
+| `LittleFS`                                   | `joltwallet/littlefs` + POSIX → `storage::LittleFs`, `storage::File`                   |
+| `ArduinoJson` v7                             | keep: `bblanchon/arduinojson` (it's C++, works with `std::string`)                     |
+| `ESPAsyncWebServer` + `AsyncTCP`             | `esp_http_server` → `WebServer` + route classes                                        |
+| `Update.h`                                   | `esp_ota_ops.h` → `OtaUpdater`                                                         |
+| `ota.h` (hex array)                          | `EMBED_FILES` (gzip at build time) → `std::span<const uint8_t>` accessor               |
+| `esp_task_wdt_init(75, true)`                | `esp_task_wdt_reconfigure` (75 s) + `esp_task_wdt_config_t` → `rtos::Watchdog` (RAII subscribe/unsubscribe) |
+| `ESP.restart()`                              | `esp_restart()` (delayed via one-shot `PeriodicTimer`)                                 |
+| `WifiAccess.h`, `Pt1000.h` (git-ignored)     | `Kconfig.projbuild` + git-ignored `sdkconfig.defaults.local`                           |
+
+Hardware constants go into `board.hpp` as `constexpr gpio_num_t`: SSR 21, LED R/G/B 13/27/12, status
+LED 33, pump relay 17, SDA/SCL 23/22, ADS ALERT/RDY 14. `A0` (used as a "3.3 V source" output) is a
+board-variant alias. Look it up in the core's `variants/esp32thing_plus/pins_arduino.h` and write the
+real GPIO number. It must not be one of the input-only pins 34–39.
+
+---
+
+## Phase 1 — Skeleton, tooling, HAL basics (1 day)
+
+1. Install ESP-IDF v6 (EIM installer or `git clone -b v6.0 --recursive` + `./install.fish esp32`),
+   `. ./export.fish`, `idf.py set-target esp32`.
+2. Layout — one IDF component per layer, so dependencies are enforced by CMake `REQUIRES`:
+   ```
+   bananactrl/
+   ├── CMakeLists.txt  partitions.csv  sdkconfig.defaults  sdkconfig.defaults.local (ignored)
+   ├── .clang-format  .clang-tidy
+   ├── main/                         app_main.cpp, App.hpp/.cpp, Kconfig.projbuild, idf_component.yml
+   ├── components/
+   │   ├── banana_core/              Result.hpp, Flags.hpp, board.hpp
+   │   ├── banana_hal/               Gpio*, I2c*, Ledc*, PeriodicTimer, Clock, rtos/{Task,Mutex,EventGroup,Watchdog}
+   │   ├── banana_drivers/           Ads1115, TemperatureConverters, Ssr, RgbLed
+   │   ├── banana_control/           PidController, HeaterController, BrewDetector, Diagnostics, StatusIndicator
+   │   ├── banana_config/            Config, ConfigStore
+   │   ├── banana_storage/           LittleFs, File, FileLogger, MeasurementRecorder
+   │   └── banana_net/               WifiManager, MdnsService, TimeSync, WebServer, routes/, OtaUpdater
+   ├── test/host/                    Unity/GoogleTest on linux target, fakes for interfaces
+   └── data/                         web UI → LittleFS image
+   ```
+3. `partitions.csv` (Thing Plus has 16 MB flash):
+   ```
+   # Name,   Type, SubType, Offset,  Size
+   nvs,      data, nvs,     0x9000,  0x5000
+   otadata,  data, ota,     0xe000,  0x2000
+   app0,     app,  ota_0,   0x10000, 0x200000
+   app1,     app,  ota_1,   ,        0x200000
+   storage,  data, littlefs,,        0x800000
+   ```
+   `sdkconfig.defaults`: `CONFIG_PARTITION_TABLE_CUSTOM=y`, `CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y`,
+   `CONFIG_ESPTOOLPY_FLASHFREQ_80M=y`, `CONFIG_ESP_TASK_WDT_TIMEOUT_S=60` (Kconfig range is 1–60; 75 s is set at runtime by `rtos::Watchdog`), `CONFIG_ESP_TASK_WDT_PANIC=y`,
+   `CONFIG_COMPILER_CXX_EXCEPTIONS=n`, `CONFIG_COMPILER_CXX_RTTI=n`, `CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024`.
+4. Explicit `REQUIRES` per component (v6 no longer pulls in the umbrella `driver` component **[v6-check]**),
+   e.g. `banana_hal` → `esp_driver_gpio esp_driver_ledc esp_driver_i2c esp_timer freertos`.
+5. Write `banana_core` (`Result<T>`, `Flags<E>`, `board.hpp`) and the first HAL classes:
+   `hal::GpioOutput`, `rtos::Task`, `storage::LittleFs` (RAII mount, `info()` → total/used bytes).
+   Add `littlefs_create_partition_image(storage ../data FLASH_IN_PROJECT)`.
+
+✅ **Exit:** `App` constructs, mounts LittleFS, lights the status LED via `GpioOutput`, logs the FS info.
+clang-tidy passes.
+
+---
+
+## Phase 2 — Pure logic classes + host tests (1 day) ✅
+
+1. **`control::PidController`** from `PidCtrl`:
+   - `begin(float*, float*)` with raw pointers to globals goes away. The API is
+     `float compute(float actual, std::chrono::milliseconds dt)`, with no hidden time source.
+   - `struct Gains { kp, ki, kd }` (+ `Gains::fromTimeConstants(kp, tn, tv)`), `struct Terms`,
+     `struct Limits`, `struct Thresholds { std::optional<float> on, off; }` replace the
+     activate/deactivate pairs.
+   - **Dropped:** the gain-schedule table (`changePidCoeffs(float[][4], size_t)`). The firmware never
+     used it, it read past the end of its table and mixed up gain and time-constant units.
+     Add it back as `std::span<const GainSegment>` if it is ever needed.
+2. **`control::BrewFeedForward`** — the open-loop brewing output from `controlHeating()`
+   (`BrewFfStart/End/Tau/Gain`), which the original plan did not list.
+   `control::toPidSettings()` / `toBrewFeedForwardSettings()` replace `configPID()`.
+3. **Temperature conversion** → `ITemperatureConverter` with `LinearConverter`, `QuadraticConverter`,
+   `LookupTableConverter(std::span<const Point>)` (`consteval`: a bad table does not compile).
+   Data in `banana/drivers/Pt1000.hpp`, generated from `Pt1000.h`; Kconfig choice
+   `BANANA_PT1000_*` (default: 5.0 V lookup table). Findings from the tests:
+   - the Arduino "3.3 V" lookup table matches a **5.08 V** bridge supply;
+   - the linear/quadratic coefficients are fits for a **3.3 V** bridge (worst case 10.8 K / 1.03 K)
+     and are about 50 K off on the 5 V hardware.
+4. **`config::Config`** as a plain value struct with default member initialisers (replaces
+   `resetConfiguration(false)`), grouped: `WifiSettings`, `PidSettings` (incl. `BrewFeedForwardSettings`),
+   `SsrSettings`, `LedSettings`, `SignalSettings`, `SystemSettings`. Empty Wi-Fi credentials mean
+   "factory credentials" (filled in by `ConfigStore` in Phase 6, Kconfig in Phase 5).
+5. Host tests in `test/host` (plain CMake + GoogleTest):
+   `cmake -S test/host -B build-host -G Ninja && cmake --build build-host && ctest --test-dir build-host`.
+   - `PidController` runs next to the **unchanged Arduino `PidCtrl.cpp`** (with a `millis()` shim) on
+     the recorded heat-up `rancilio_silvia_stock_measurement.csv` (6231 samples, 4 configurations incl.
+     D-term, thresholds and resets); outputs agree within 1e-3 counts.
+   - Converters against `PT_1000_tabelle.csv` through the bridge model of `calc_wheat_stone.py`.
+   - `BrewFeedForward`, `Config` defaults vs. `resetConfiguration()`, config mapping, `Flags`.
+
+✅ **Exit:** logic classes build for both `esp32` and host; 32 host tests green; clang-tidy clean.
+
+---
+
+## Phase 3 — I2C HAL + `Ads1115` driver (1 day) ✅
+
+1. `hal::I2cBus` (RAII `i2c_new_master_bus`, `probe()`, `addDevice()`), `hal::I2cDevice` (RAII
+   `i2c_master_bus_add_device`, `write(std::span<const uint8_t>)`, `writeRead(...)`),
+   `hal::GpioInput` (pull mode, `onEdge(Edge, IsrCallback, void*)`).
+2. `drivers::Ads1115 : ITemperatureSensor` takes `hal::I2cDevice&` and `const ITemperatureConverter&`.
+   - `static Result<Ads1115> create(...)` reads the config register (presence check, which the Arduino
+     driver never did: `_bConnectStatus` was never set) and applies the settings.
+   - `ads1115::ConfigRegister` value class with typed enums (`Mux`, `Pga`, `DataRate`, ...) replaces the
+     16 bit-level `setX/getX` pairs; `kCoffeeMachineConfig` = `0x880C`, the register value that
+     `configADS1115()` produced. `configure()` writes it in one transfer and verifies the read-back
+     (ignoring the OS bit, which reads 0 in continuous mode).
+   - Filter → `MovingAverage<12>` (`std::array` ring buffer). The Arduino Savitzky-Golay branch only
+     existed for buffer sizes 5/7/9/11, so with size 12 it was always the moving average.
+   - `printConfigReg()` → `ConfigRegister::toString()` (with `snprintf`, see §1).
+3. The ALERT/RDY pin is **not** part of the driver: `hal::GpioInput` (internal pull-up) with `onEdge()`
+   is wired in `App`. Until Phase 4, `SensorMonitor` (main/) reads on every edge and logs once per second.
+
+Bench notes: an ADS1115 that answers on I2C but resets to its power-on defaults as soon as it converts
+has no proper VDD/GND (it is powered through the I2C pull-ups). A module that delivers **~128
+conversions/s at "8 SPS"** carries a 12-bit ADS1015, not an ADS1115.
+
+✅ **Exit:** on the bench (AIN0/AIN1 on GND) the ADS1115 is configured to `0x880C`, delivers 8.1 SPS via
+the ready interrupt, raw 0 → 77.13 °C (the 5 V lookup table at 0 V). Temperature comparison with the
+Pt1000 against the Arduino firmware is still open (needs the machine board, see Phase 8).
+
+---
+
+## Phase 4 — Actuators and control (2 days)
+
+1. HAL: `hal::LedcTimer` (freq, resolution; `reconfigure()`), `hal::PwmChannel` (`setDuty(float 0..1)`),
+   `hal::PeriodicTimer` (RAII `esp_timer`, `std::function`-free callback via trampoline),
+   `hal::GpioInput` (pull mode, `onEdge(IsrCallback, void*)`), `rtos::EventGroup`, `rtos::Watchdog`.
+2. Drivers: `drivers::Ssr : IPwmOutput` on LEDC timer 0 (15 Hz). `drivers::RgbLed` owns three
+   `PwmChannel`s on LEDC timer 1 (500 Hz) and does gain and saturation (today `setColor`).
+3. Control:
+   - `control::StatusIndicator` — pure mapping `(Fault, BrewState, temp, target) → LedColor`, testable.
+   - `control::BrewDetector` — ISR stores timestamp + sets event bit, `update(now)` debounces 200 ms
+     and returns `BrewState`.
+   - `control::Diagnostics` — evaluates temp range, ADS mode reset, Wi-Fi state → `Flags<Fault>`.
+   - `control::HeaterController : rtos::Task` — owns the loop that replaces `loop()`
+     and switches between `PidController` and `BrewFeedForward` (reset PID when brewing ends):
+     waits on `EventGroup` bits (`SampleReady`, `Tick450ms`, `BrewEdge`, `ConfigChanged`),
+     calls the parts above in the same order and with the same dividers (`%3` PID, `%3` LED, `%2` DIAG),
+     feeds `Watchdog`, publishes `ProcessSnapshot` under a mutex. `applyConfig(const Config&)`
+     replaces `configPID()`/`configLED()` and is **only** called from inside the task.
+4. Arduino bugs that the new types fix on their own:
+   - `NO_ERROR = 1u << 0` is a bit, so `iErrorId == WIFI_DISCONNECT` is never true.
+     With `Flags<Fault>` + `none()`/`only(Fault::WifiDisconnect)` this can't happen.
+   - `/paramReset` reconfigures the PID from the web task → now only a `ConfigChanged` event.
+   - Unprotected `&= ~BREWING_DETECTION` / `iInterruptCntPump++` → event group is atomic.
+
+✅ **Exit:** on the bench (heater through a dummy load), LED colours, SSR duty, brew detection and standby
+timeout behave like the Arduino firmware. Only then connect the machine.
+
+---
+
+## Phase 5 — Networking (1–2 days)
+
+1. `net::WifiManager` — constructor takes `const WifiSettings&` and factory credentials.
+   `Result<Mode> start(std::chrono::seconds timeout)` tries STA and falls back to SoftAP
+   `SilviaCoffeeCtrl`. Internal event handler via static trampoline; reconnects on
+   `WIFI_EVENT_STA_DISCONNECTED`. `isConnected()`, `rssiPercent()` (today `calcWifiStrength`).
+2. `net::MdnsService` (RAII `mdns_init/free`, hostname `coffee`, `_http._tcp` 80).
+3. `net::TimeSync` — `esp_netif_sntp_*`, TZ string (the fixed `+3600/+3600` offsets are wrong
+   in winter), `std::optional<std::tm> now()`.
+4. Factory credentials: `Kconfig.projbuild` → `CONFIG_BANANA_WIFI_FACTORY_SSID/PW`, values in the
+   git-ignored `sdkconfig.defaults.local`.
+
+✅ **Exit:** joins home Wi-Fi, falls back to SoftAP with a wrong SSID, `coffee.local` resolves, local time correct.
+
+---
+
+## Phase 6 — Storage, config, logging (1 day)
+
+1. `storage::File` — RAII `FILE*` (`open(path, mode) → Result<File>`, `write(std::string_view)`,
+   `readAll()`). All paths under `/fs`.
+2. `config::ConfigStore` — `Result<Config> load()`, `Result<void> save(const Config&)`, `reset()`.
+   Keeps `/fs/params.json` with the **exact key names** (including the `HighTresholdValue` typo), so
+   existing files and `settings.html` keep working. Missing keys → defaults + write back (as today).
+   JSON mapping via ArduinoJson `convertToJson/convertFromJson` overloads per settings struct
+   instead of the 30-line ternary blocks. A `std::mutex` replaces `bParamFileLocked`.
+3. `storage::MeasurementRecorder` — writes the header (timestamp, ADS registers) and appends
+   `ProcessSnapshot` rows. Same CSV columns.
+4. `storage::FileLogger : rtos::Task` — registers itself via `esp_log_set_vprintf` (static trampoline),
+   formats to UART immediately, pushes the line into a FreeRTOS ringbuffer; the task appends to
+   `/fs/logfile_recent.txt`. Rotates `recent` → `last` in its constructor.
+   **[v6-check: log component was reworked in 5.5/6.0, confirm `esp_log_set_vprintf` behaviour]**
+
+✅ **Exit:** params survive reboot, defaults written back for missing keys, logs and data.csv downloadable.
+
+---
+
+## Phase 7 — Web server + OTA (2 days)
+
+1. `net::WebServer` — RAII around `httpd_handle_t` (`wildcard` matching, `max_uri_handlers = 20`,
+   ~8 kB stack). Routes are objects implementing
+   `class IRoute { virtual std::span<const httpd_uri_t> uris() = 0; }`, and `WebServer::add(IRoute&)`
+   registers them with `user_ctx = this`.
+2. Route classes:
+
+   | Class               | URIs                                                                 | Depends on                    |
+   |---------------------|----------------------------------------------------------------------|-------------------------------|
+   | `StaticFileRoutes`  | `/`, `/*.html`, `/style.css`, favicons, `/data.csv`, `/*logfile.txt`, `/params.json` | `LittleFs` (chunked send, MIME by extension) |
+   | `ApiRoutes`         | `GET /lastvalues.json`, `POST /paramUpdate`, `GET /paramReset`, `GET /restartesp` | `HeaterController::snapshot()`, `ConfigStore`, `EventGroup`, `WifiManager` |
+   | `OtaRoutes`         | `GET /failsafe` (embedded gzip), `POST /ota_firmware`, `POST /ota_spiffs` | `OtaUpdater`, `LittleFs` |
+
+   Small helper `HttpRequest`/`HttpResponse` wrappers around `httpd_req_t*`
+   (`Result<std::string> body()`, `header(name)`, `send(status, type, body)`).
+3. `net::OtaUpdater` — `Result<void> begin(Md5 expected)`, `write(std::span<const uint8_t>)`,
+   `Result<void> finish()`. The destructor calls `esp_ota_abort` if `finish()` wasn't reached, so an
+   aborted upload never leaves a half-open handle. Running MD5 via `esp_rom_md5`/PSA **[v6-check: mbedTLS 4 / PSA in v6]**.
+4. `esp_http_server` doesn't parse `multipart/form-data`. Change `ota.html` + the failsafe page to
+   `fetch()` the file as the raw body with `X-MD5` / `X-Filename` headers.
+5. Enable `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. `App` calls
+   `esp_ota_mark_app_valid_cancel_rollback()` once Wi-Fi + web server are up.
+
+✅ **Exit:** all pages in `data/` work (only the upload form changed), settings round-trip, graphs load,
+OTA from the web UI boots the new image.
+
+---
+
+## Phase 8 — Composition, validation, cut-over (1 day)
+
+1. `App` final form: members declared in dependency order (so destruction is reverse), `run()` does
+   boot sequence → `start()` tasks → returns (`app_main` task can end).
+2. Side-by-side: record `data.csv` from old and new firmware for one heat-up + one shot, compare with
+   `measurements/plot_measurement.py`.
+3. Soak test ≥ 24 h; `Diagnostics` also logs `esp_get_free_heap_size()` and
+   `heap_caps_get_minimum_free_size()`.
+4. **Note:** the first flash has to go over USB. The partition table changes, so Arduino's
+   `Update.h` OTA cannot install the IDF image. Back up `params.json` from the old firmware first
+   (settings page → download).
+5. Optional follow-ups: bundle a chart library into LittleFS (graphs in SoftAP mode), SSE endpoint instead
+   of polling, config in NVS.
+
+---
+
+## Rough timeline
+
+| Phase | Content                                   | Effort |
+|-------|-------------------------------------------|--------|
+| 1     | Skeleton, tooling, core + first HAL       | 1 d    |
+| 2     | PID, converters, Config + host tests      | 1 d    |
+| 3     | I2C HAL + Ads1115                         | 1 d    |
+| 4     | LEDC/GPIO/timer HAL, control classes      | 2 d    |
+| 5     | WifiManager, mDNS, TimeSync               | 1–2 d  |
+| 6     | ConfigStore, recorder, FileLogger         | 1 d    |
+| 7     | WebServer, routes, OtaUpdater             | 2 d    |
+| 8     | App composition, validation, cut-over     | 1 d    |
+
+Phases 2, 3 and 5 are independent. Phase 4 needs 3, and Phase 7 needs 5 and 6.

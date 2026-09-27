@@ -1,0 +1,16 @@
+# SparkFun ESP32 Thing Plus: 16 MB flash, custom OTA + LittleFS layout
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# Arduino used esp_task_wdt_init(75, true). Kconfig caps the boot value at 60 s;
+# rtos::Watchdog raises it to 75 s at runtime (esp_task_wdt_reconfigure).
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=60
+CONFIG_ESP_TASK_WDT_PANIC=y
+
+# C++: no exceptions, no RTTI (failures are std::expected values)
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <title>BananaCoffee</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Java script for graphs.html -->
+  <script type="text/javascript">
+
+  function onSubmitParams(){
+    var obj_div_elements = document.getElementById("id_input");
+    var obj_div_input_children = obj_div_elements.getElementsByTagName("input");
+    var obj_json_req = {};
+
+    for (i = 0; i < obj_div_input_children.length; ++i) {
+      var lst_obj_div_input_children_id = obj_div_input_children[i].id.split("_");
+      var str_section = lst_obj_div_input_children_id[0];
+      var str_key = lst_obj_div_input_children_id[1];
+
+      if(!obj_json_req.hasOwnProperty(str_section)){
+        // define nested array if not exists already
+        obj_json_req[str_section] = {};
+      }
+
+      if (obj_div_input_children[i].type === "text"){
+        obj_json_req[str_section][str_key] = obj_div_input_children[i].value;
+      } else if (obj_div_input_children[i].type === "checkbox"){
+        obj_json_req[str_section][str_key] = (obj_div_input_children[i].checked);
+      }
+    }
+    var obj_http_request = new XMLHttpRequest();
+    obj_http_request.open("POST", "/paramUpdate", true);
+    obj_http_request.setRequestHeader("Content-Type", "application/json");
+    obj_http_request.onload= function() {
+        // assign response text from request to variable
+        var str_buf = obj_http_request.responseText;
+        alert(str_buf);
+    }
+    obj_http_request.send(JSON.stringify(obj_json_req));
+  }
+
+  function onResetParameter(){
+    if (confirm("Are you sure you want to Reset all parameters?")){
+      // initialize http request object for asynchronous file request
+      var obj_http_request=new XMLHttpRequest();
+      // request data.csv from http server
+      obj_http_request.open("GET","/paramReset");
+
+      // define function which is executed when requested is fully loaded
+      obj_http_request.onload= function() {
+        var str_buf = obj_http_request.responseText;
+        alert(str_buf);
+      }
+
+      obj_http_request.send();
+      onGetParameter();
+    }
+  }
+
+  function onGetParameter(){
+    // initialize http request object for asynchronous file request
+    var obj_http_request=new XMLHttpRequest();
+    // request data.csv from http server
+    obj_http_request.open("GET","params.json");
+
+    // define function which is executed when requested is fully loaded
+    obj_http_request.onload= function() {
+      // get response as string from esp async webserver
+      var str_buf = obj_http_request.responseText;
+      // parse string response to json object
+      const obj_json_req = JSON.parse(str_buf);
+
+      // get form object in html side
+      var obj_form = document.getElementById("id_input");
+
+      // iterate over json object and create text inputs
+      for(var str_section_key in obj_json_req){
+        var obj_heading = document.getElementById(str_section_key);
+
+        if(!obj_heading){
+          // add heading if not exists already
+          obj_heading = document.createElement("h3");
+          obj_heading.innerHTML = str_section_key;
+          obj_heading.id = str_section_key;
+          obj_form.appendChild(obj_heading);
+        }
+
+        for(var str_key in obj_json_req[str_section_key]){
+          var obj_input = document.getElementById(str_section_key + "_" + str_key);
+
+          if (!obj_input){
+            // define paragraph for each input
+            var obj_para = document.createElement("p");
+
+            // define label for text input and line break
+            var obj_label = document.createElement("Label");
+            obj_label.setAttribute("for", str_section_key + "_" + str_key);
+            obj_label.innerHTML = str_key;
+
+            // append label and line break form
+            obj_para.appendChild(obj_label);
+
+            // define text input and line break
+            var obj_input = document.createElement("Input");
+            if (typeof obj_json_req[str_section_key][str_key] === "boolean"){
+              obj_input.type = "checkbox";
+              obj_input.checked = obj_json_req[str_section_key][str_key];
+              obj_label.append(obj_input);
+            } else {
+              obj_input.type="text";
+              // append input to form
+              obj_para.appendChild(obj_input);
+            }
+            obj_input.value=obj_json_req[str_section_key][str_key];
+            obj_input.id=str_section_key + "_" + str_key;
+
+            // append paragraph to form
+            obj_form.appendChild(obj_para);
+          } else {
+            obj_input.value=obj_json_req[str_section_key][str_key];
+          }
+        }
+      }
+    }
+    obj_http_request.send();
+  }
+
+  function onFileUpload(files){
+    // upload file json file content
+
+    //only select first file
+    var obj_file = files[0];
+    if(!obj_file.type.match("application/json")) {
+      // upload file is not from type json file
+      alert("File is not json type. Abort!");
+    } else {
+      // initialize FileReader object
+      var obj_file_reader = new FileReader();
+
+      // initiate FileRead
+      obj_file_reader.readAsText(obj_file);
+
+      // define function when FileReader object has finished to parse file content
+      obj_file_reader.onload = function(evt) {
+        // get file content
+        var str_file_content = evt.target.result;
+
+        // start http request to transmit data
+        var obj_http_request = new XMLHttpRequest();
+        obj_http_request.open("POST", "/paramUpdate", true);
+        obj_http_request.setRequestHeader("Content-Type", "application/json");
+        // define response handling when transmit is finished
+        obj_http_request.onload= function() {
+          // assign response text from request to variable
+          var str_buf = obj_http_request.responseText;
+          alert(str_buf);
+        }
+        // send file content
+        obj_http_request.send(str_file_content);
+      };
+      // reload text field content
+      onGetParameter();
+    }
+  }
+
+  const saveDownloadedData = (fileName, data) => {
+    // code based on: https://stackoverflow.com/questions/3665115/how-to-create-a-file-in-memory-for-user-to-download-but-not-through-server
+    if(~navigator.userAgent.indexOf('MSIE') || ~navigator.appVersion.indexOf('Trident/')) { /* IE9-11 */
+        const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
+        navigator.msSaveBlob(blob, fileName);
+    } else {
+        const link = document.createElement('a')
+        link.setAttribute('target', '_blank');
+        if(Blob !== undefined) {
+            const blob = new Blob([data], { type: 'text/plain' });
+            link.setAttribute('href', URL.createObjectURL(blob));
+        } else {
+            link.setAttribute('href', 'data:text/plain,' + encodeURIComponent(data));
+        }
+
+        ~window.navigator.userAgent.indexOf('Edge')
+            && (fileName = fileName.replace(/[&\/\\#,+$~%.'':*?<>{}]/g, '_')); /* Edge */
+
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+
+function onFileDownload(){
+  var obj_http_request=new XMLHttpRequest();
+  // request data.csv from http server
+  obj_http_request.open("GET","params.json");
+  // define function which is executed when requested is fully loaded
+  obj_http_request.onload= function() {
+    // get response as string from esp async webserver
+    var str_buf = obj_http_request.responseText;
+    saveDownloadedData('silvia_ctrl_config.json', str_buf);
+  }
+  obj_http_request.send();
+}
+
+function onRequestRestart(){
+  if (confirm("Are you sure you want to restart ESP?")){
+    var obj_http_request=new XMLHttpRequest();
+    // request data.csv from http server
+    obj_http_request.open("GET","/restartesp");
+    // define function which is executed when requested is fully loaded
+    obj_http_request.onload= function() {
+      // get response as string from esp async webserver
+      var str_buf = obj_http_request.responseText;
+      alert(str_buf);
+    }
+    obj_http_request.send();
+  }
+}
+
+  </script>
+</head>
+<body onload="onGetParameter()">
+  <style>
+    input[type=text] {
+      width: auto;
+      padding: 6px 10px;
+      margin: 4px 0;
+      box-sizing: border-box;
+      border: 2px solid #ccc;
+      -webkit-transition: 0.2s;
+      transition: 0.2s;
+      outline: none;
+      border-radius: 4px;
+    }
+
+    input[type=text]:focus {
+      border: 3px solid #555;
+    }
+
+    input[type=button], input[type=submit], input[type=reset] {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      text-decoration: none;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size:medium;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
+      background: #009e00;
+    }
+
+    form label {
+      display: block;
+      font-size: 0.8em;
+      color: darkslategrey;
+      padding-left: 3px;
+    }
+
+  </style>
+<div class="header">
+  <h1>BananaCoffee</h1>
+  A simple <b>web interface</b> to control Rancilio Silvia espresso machine.
+</div>
+
+<div class="navbar">
+  <a href="/">Home</a>
+  <a href="graphs.html">Graphs</a>
+  <a href="settings.html" class="active">Settings</a>
+  <a href="ota.html">OTA</a>
+  <a href="log.html">Debug Log</a>
+  <a href="#" class="right">About</a>
+</div>
+
+<div class="main">
+  </p>
+    <h2>Parameter setup for Coffee Control</h3>
+    <form>
+      <div id="id_input"></div>
+      <p>
+        <input type="button" onclick="onSubmitParams()" value="Submit">
+        <input type="button" onclick="onResetParameter()" value="Reset">
+      </p>
+      <p>
+        <input type="button" onclick="document.getElementById('ConfigUpload').click();" value="Upload config">
+        <input type="file" id="ConfigUpload" accept=".json" style="display:none;" onchange="onFileUpload(this.files)">
+        <input type="button" onclick="onFileDownload()" value="Download config">
+      </p>
+      <p>
+        <input type="button" onclick="onRequestRestart()" value="Restart ESP32">
+      </p>
+      </p>
+    </form>
+</div>
+
+<div class="footer">
+  <h5>Footer</h5>
+</div>
+
+</body>
+</html>

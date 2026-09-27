@@ -1,0 +1,31 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 110
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterNamespace: false
+  AfterControlStatement: Never
+PointerAlignment: Left
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+FixNamespaceComments: true
+NamespaceIndentation: None
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[a-z_]+>$'          # C++ standard library
+    Priority: 1
+  - Regex: '^"(esp_|freertos/|driver/|hal/|soc/|sdkconfig)'
+    Priority: 2
+  - Regex: '^"banana/'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 4
+...

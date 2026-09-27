@@ -1,0 +1,22 @@
+menu "bananactrl"
+
+    choice BANANA_PT1000_CONVERSION
+        prompt "Pt1000 temperature conversion"
+        default BANANA_PT1000_LOOKUP_5V0
+        help
+            How the Wheatstone bridge voltage is converted into a temperature.
+            The machine's bridge runs on 5 V: only the 5.0 V lookup table fits it.
+            The "3.3 V" table (name kept from the Arduino firmware) was generated for 5.08 V.
+            The regression fits are for a 3.3 V bridge (worst case 10.8 K linear, 1.03 K quadratic).
+
+        config BANANA_PT1000_LOOKUP_5V0
+            bool "Lookup table, 5.0 V bridge supply"
+        config BANANA_PT1000_LOOKUP_3V3
+            bool "Lookup table, 3.3 V bridge supply"
+        config BANANA_PT1000_LINEAR
+            bool "Linear regression (fitted for 3.3 V supply)"
+        config BANANA_PT1000_QUADRATIC
+            bool "Quadratic regression (fitted for 3.3 V supply)"
+    endchoice
+
+endmenu

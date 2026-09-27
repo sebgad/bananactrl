@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <title>BananaCoffee</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- include google charts libraries  -->
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+
+  <!-- Java script for graphs.html -->
+  <script type="text/javascript">
+    // load core packages from google charts
+    google.charts.load('current', {'packages':['line', 'corechart']});
+    // define callback to make sure that function is called, when website is completely loaded
+    google.charts.setOnLoadCallback(onChartInit);
+
+    var obj_chart;
+    var obj_data_table;
+    var dct_chart_options;
+    var i_data_pointer = 0;
+
+    function onChartInit(){
+      // define Line chart and assign it to the div element in html
+      obj_chart = new google.visualization.LineChart(document.getElementById('chart_div'));
+      // define google data table object
+      obj_data_table = new google.visualization.DataTable();
+      // add columns to google data table object
+      obj_data_table.addColumn('number', "Time");
+      obj_data_table.addColumn('number', "Temperature");
+      obj_data_table.addColumn('number', "TargetPWM");
+      obj_data_table.addColumn('number', "TargetTemperature");
+
+      // chart display options
+      dct_chart_options = {
+        title: 'Temperature and Target PWM',
+        // Gives each series an axis that matches the vAxes number below.
+        series: {
+          2: {targetAxisIndex: 0, color:'black', lineDashStyle: [8,8] },
+          0: {targetAxisIndex: 0},
+          1: {targetAxisIndex: 1}
+        },
+        vAxes: {
+          // Adds settings for each vertical axis.
+          0: {title: 'Temperature (\°C)',
+              viewWindow: { max: 100, min: 0},
+              ticks:[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]},
+          1: {title: 'Target PWM (\%)',
+              viewWindow: { max: 100, min: 0 },
+              ticks:[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100 ]},
+        },
+        legend: {position: 'top'},
+        hAxis: {
+          title: 'Time (s)',
+        },
+      };
+
+    // initialize http request object for asynchronous file request
+    var obj_http_request=new XMLHttpRequest();
+    // request data.csv from http server
+    obj_http_request.open("GET","data.csv");
+
+    // define function which is executed when requested is fully loaded
+    obj_http_request.onload= function() {
+      // assign response text from request to variable
+      var str_buf = obj_http_request.responseText;
+      // split string request to list (on line breaks)
+      // columms: Time,Temperature,AdReadVoltage,Pressure,HeatOn,PumpOn,TarPwm
+      lst_data = str_buf.split(/\r?\n/g);
+
+      // iterate over rows in data
+      for (let i_row = 3; i_row<lst_data.length; i_row++){
+        if (lst_data[i_row] !== "") {
+          var lst_line = lst_data[i_row].split(",")
+          var f_time = parseFloat(lst_line[0]);
+          var f_temp  = parseFloat(lst_line[1]);
+          var f_pwm  = parseFloat(lst_line[2]);
+          var f_target_temp  = parseFloat(lst_line[3]);
+          obj_data_table.addRow([f_time, f_temp, f_target_temp]);
+          i_data_pointer++;
+        }
+      }
+    }
+    obj_http_request.send();
+
+    // draw classic chart with data
+    obj_chart.draw(obj_data_table, dct_chart_options);
+    }
+
+    // Download Measurement File
+    function onFileDownload(){
+      var obj_http_request=new XMLHttpRequest();
+      // request data.csv from http server
+      obj_http_request.open("GET","data.csv");
+      // define function which is executed when requested is fully loaded
+      obj_http_request.onload= function() {
+        // get response as string from esp async webserver
+        var str_buf = obj_http_request.responseText;
+        saveDownloadedData('data.csv', str_buf);
+      }
+      obj_http_request.send();
+    }
+
+    const saveDownloadedData = (fileName, data) => {
+      // code based on: https://stackoverflow.com/questions/3665115/how-to-create-a-file-in-memory-for-user-to-download-but-not-through-server
+      if(~navigator.userAgent.indexOf('MSIE') || ~navigator.appVersion.indexOf('Trident/')) { /* IE9-11 */
+          const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
+          navigator.msSaveBlob(blob, fileName);
+      } else {
+          const link = document.createElement('a')
+          link.setAttribute('target', '_blank');
+          if(Blob !== undefined) {
+              const blob = new Blob([data], { type: 'text/plain' });
+              link.setAttribute('href', URL.createObjectURL(blob));
+          } else {
+              link.setAttribute('href', 'data:text/plain,' + encodeURIComponent(data));
+          }
+
+          ~window.navigator.userAgent.indexOf('Edge')
+              && (fileName = fileName.replace(/[&\/\\#,+$~%.'':*?<>{}]/g, '_')); /* Edge */
+
+          link.setAttribute('download', fileName);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+      }
+    }
+
+    function drawChart(){
+    // initialize http request object for asynchronous file request
+    var obj_http_request=new XMLHttpRequest();
+    // request data.csv from http server
+    obj_http_request.open("GET","data.csv");
+
+    // define function which is executed when requested is fully loaded
+    obj_http_request.onload= function() {
+      // get response as string from esp async webserver
+      var str_buf = obj_http_request.responseText;
+      // split string request to list (on line breaks)
+      // columms: Time,Temperature,AdReadVoltage,Pressure,HeatOn,PumpOn,TarPwm
+      lst_data = str_buf.split(/\r?\n/g);
+
+      // iterate over rows in data
+      for (let i_row = i_data_pointer; i_row<lst_data.length; i_row++){
+        if (lst_data[i_row] !== "") {
+          var lst_line = lst_data[i_row].split(",")
+          var f_time = parseFloat(lst_line[0]);
+          var f_temp  = parseFloat(lst_line[1]);
+          var f_pwm  = parseFloat(lst_line[2]);
+          var f_target_temp = parseFloat(lst_line[3])
+
+          obj_data_table.addRow([f_time, f_temp, f_pwm, f_target_temp]);
+          i_data_pointer++;
+        }
+      }
+    }
+
+      // start http request
+      obj_http_request.send();
+
+      // draw classic chart with data
+      obj_chart.draw(obj_data_table, dct_chart_options);
+    }
+
+    // call function draw chart in given interval [ms]
+    setInterval(drawChart, 3000);
+  </script>
+</head>
+<body>
+  <style>
+    p {
+      display: flex;
+      justify-content: left;
+      align-items: center;
+    }
+
+    p > span {
+      display: inline-block;
+      width: 20px;
+    }
+
+    p > span:first-child {
+      display: inline-block;
+      width: 200px;
+    }
+
+    input[type=text] {
+      width: 50%;
+      padding: 12px 20px;
+      margin: 8px 0;
+      box-sizing: border-box;
+      border: 3px solid #ccc;
+      -webkit-transition: 0.5s;
+      transition: 0.5s;
+      outline: none;
+    }
+
+    input[type=text]:focus {
+      border: 3px solid #555;
+    }
+
+    input[type=button], input[type=submit], input[type=reset] {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 16px 32px;
+      text-decoration: none;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size:medium;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
+      background: #009e00;
+    }
+  </style>
+<div class="header">
+  <h1>BananaCoffee</h1>
+  A simple <b>web interface</b> to control Rancilio Silvia espresso machine.
+</div>
+
+<div class="navbar">
+  <a href="/">Home</a>
+  <a href="graphs.html" class="active">Graphs</a>
+  <a href="settings.html">Settings</a>
+  <a href="ota.html">OTA</a>
+  <a href="log.html">Debug Log</a>
+  <a href="#" class="right">About</a>
+</div>
+
+<div class="main">
+  <h3>Sensor Graphs</h3>
+  <div id="chart_div", style="width:95%;height:600px"></div>
+  <form>
+  <input type="button" onclick="onFileDownload()" value="Download Measurement">
+  </form>
+</div>
+
+<div class="footer">
+  <h5>Footer</h5>
+</div>
+
+</body>
+</html>
