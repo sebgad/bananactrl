@@ -19,4 +19,15 @@ menu "bananactrl"
             bool "Quadratic regression (fitted for 3.3 V supply)"
     endchoice
 
+    config BANANA_WIFI_FACTORY_SSID
+        string "Factory Wi-Fi SSID"
+        default ""
+        help
+            Network joined when the configuration has no SSID (WifiAccess.h in the Arduino firmware).
+            Put the value into the git-ignored sdkconfig.defaults.local.
+
+    config BANANA_WIFI_FACTORY_PW
+        string "Factory Wi-Fi password"
+        default ""
+
 endmenu

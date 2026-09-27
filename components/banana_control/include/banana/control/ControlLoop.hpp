@@ -17,8 +17,11 @@ namespace banana::control {
 struct ProcessSnapshot {
     float seconds = 0.0F; ///< since start, at the last measurement
     float celsius = 0.0F;
-    float heaterCounts = 0.0F; ///< SSR duty in counts (0..255 by default)
+    float heaterCounts = 0.0F;  ///< SSR duty in counts (0..255 by default)
+    float heaterPercent = 0.0F; ///< heaterCounts / HighLimitManipulation * 100 (data.csv, web UI)
     float target = 0.0F;
+    float pidIntegrator = 0.0F; ///< /lastvalues.json
+    float pidErrorDiff = 0.0F;
     bool brewing = false;
     bool standby = false;
     Faults faults;
@@ -56,6 +59,10 @@ public:
         snapshot.brewing = brew_.brewing();
         snapshot.standby = standby_;
         snapshot.faults = faults_;
+        snapshot.heaterPercent =
+            pidSettings_.highLimit != 0.0F ? snapshot.heaterCounts / pidSettings_.highLimit * 100.0F : 0.0F;
+        snapshot.pidIntegrator = pid_.integrator();
+        snapshot.pidErrorDiff = pid_.errorDiff();
         return snapshot;
     }
     [[nodiscard]] Faults faults() const { return faults_; }

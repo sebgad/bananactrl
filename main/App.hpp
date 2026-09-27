@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "banana/config/Config.hpp"
+#include "banana/config/ConfigStore.hpp"
 #include "banana/drivers/Ads1115.hpp"
 #include "banana/drivers/RgbLed.hpp"
 #include "banana/drivers/Ssr.hpp"
@@ -12,8 +13,14 @@
 #include "banana/hal/PeriodicTimer.hpp"
 #include "banana/io/Outputs.hpp"
 #include "banana/io/TemperatureSensor.hpp"
+#include "banana/net/MdnsService.hpp"
+#include "banana/net/TimeSync.hpp"
+#include "banana/net/WifiManager.hpp"
 #include "banana/rtos/EventGroup.hpp"
+#include "banana/storage/FileLogger.hpp"
 #include "banana/storage/LittleFs.hpp"
+#include "banana/storage/MeasurementRecorder.hpp"
+#include "banana/storage/Nvs.hpp"
 
 #include "HeaterTask.hpp"
 
@@ -25,12 +32,6 @@ public:
     [[nodiscard]] Result<float> readCelsius() override { return fail(ESP_ERR_NOT_FOUND); }
     [[nodiscard]] bool healthy() override { return false; }
     void setFilterActive(bool /*active*/) override {}
-};
-
-/// Until Phase 5 (WifiManager): never reports a disconnected station.
-class NoNetwork final : public io::INetworkStatus {
-public:
-    [[nodiscard]] bool stationDisconnected() const override { return false; }
 };
 
 /// Composition root: owns every object, wires the dependencies, starts the tasks.
@@ -48,22 +49,32 @@ public:
     void run();
 
 private:
-    config::Config config_; ///< factory defaults until ConfigStore (Phase 6)
+    void startNetwork();
+    void startRecording();
+
+    storage::Nvs nvs_;
     storage::LittleFs fs_;
+    storage::FileLogger logger_;
+    bool loggerStarted_; ///< logger_ started right after mounting, before anything else logs
+    config::ConfigStore configStore_;
+    config::Config config_; ///< params.json at boot
     hal::GpioOutput statusLed_;
     hal::GpioOutput sensorSupply_;
     hal::I2cBus i2cBus_;
     hal::I2cDevice adsDevice_;
-    std::optional<drivers::Ads1115> ads_; ///< empty if the ADS1115 does not answer
+    std::optional<drivers::Ads1115> ads_;                  ///< empty if the ADS1115 does not answer
+    std::optional<storage::MeasurementRecorder> recorder_; ///< data.csv, created after the time sync
     MissingSensor missingSensor_;
     drivers::Ssr ssr_;
     drivers::RgbLed rgbLed_;
     hal::GpioInput adsReady_;
     hal::GpioInput pumpRelay_;
-    NoNetwork network_;
+    net::WifiManager wifi_; ///< started in run(), after the heater
     rtos::EventGroup events_;
     HeaterTask heaterTask_;
     hal::PeriodicTimer tick_;
+    std::optional<net::MdnsService> mdns_;
+    std::optional<net::TimeSync> timeSync_;
 };
 
 } // namespace banana

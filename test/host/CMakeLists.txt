@@ -12,9 +12,15 @@ find_package(GTest REQUIRED)
 enable_testing()
 
 set(COMPONENTS ${CMAKE_CURRENT_LIST_DIR}/../../components)
+# ArduinoJson as downloaded by the IDF component manager (run `idf.py build` once)
+set(ARDUINOJSON ${CMAKE_CURRENT_LIST_DIR}/../../managed_components/bblanchon__arduinojson/src)
+if(NOT EXISTS ${ARDUINOJSON}/ArduinoJson.h)
+    message(FATAL_ERROR "ArduinoJson not found in managed_components; run `idf.py build` first")
+endif()
 
 # Logic under test, compiled from the same sources as the firmware
 add_library(banana_logic STATIC
+    ${COMPONENTS}/banana_config/src/ConfigJson.cpp
     ${COMPONENTS}/banana_control/src/PidController.cpp
     ${COMPONENTS}/banana_control/src/BrewFeedForward.cpp
     ${COMPONENTS}/banana_control/src/ConfigMapping.cpp
@@ -25,9 +31,11 @@ target_include_directories(banana_logic PUBLIC
     ${COMPONENTS}/banana_config/include
     ${COMPONENTS}/banana_control/include
     ${COMPONENTS}/banana_drivers/include
+    ${COMPONENTS}/banana_storage/include
     ${COMPONENTS}/banana_core/include
     # esp_err.h stand-in for banana::Result
     ${CMAKE_CURRENT_LIST_DIR}/shim)
+target_include_directories(banana_logic SYSTEM PRIVATE ${ARDUINOJSON})
 target_compile_options(banana_logic PUBLIC -Wall -Wextra -Werror)
 
 # The original Arduino PID controller, unchanged, as golden reference
@@ -39,7 +47,9 @@ add_executable(host_tests
     test_brew_feed_forward.cpp
     test_control_loop.cpp
     test_config.cpp
+    test_config_json.cpp
     test_flags.cpp
+    test_measurement_csv.cpp
     test_pid_controller.cpp
     test_status.cpp
     test_temperature_converters.cpp)

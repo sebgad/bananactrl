@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 
@@ -10,6 +11,7 @@
 #include "banana/io/Outputs.hpp"
 #include "banana/rtos/EventGroup.hpp"
 #include "banana/rtos/Task.hpp"
+#include "banana/storage/MeasurementRecorder.hpp"
 
 namespace banana {
 
@@ -42,6 +44,8 @@ public:
     /// From any task: applied inside the heater task at its next wake-up.
     void requestConfig(const config::Config& config);
     [[nodiscard]] control::ProcessSnapshot snapshot() const;
+    /// Appends a row to data.csv on every 450 ms tick (STORE). The recorder must outlive the task.
+    void attachRecorder(storage::MeasurementRecorder* recorder) { recorder_.store(recorder); }
 
     /// ISR / timer trampolines, `arg` is the HeaterTask.
     static void onSampleReadyIsr(void* arg);
@@ -53,11 +57,14 @@ protected:
 
 private:
     void applyPendingConfig();
+    void store(const control::ProcessSnapshot& snapshot);
 
     rtos::EventGroup* events_;
     Hardware hw_;
     control::ControlLoop loop_;
     std::uint32_t reportTicks_ = 0;
+    std::atomic<storage::MeasurementRecorder*> recorder_{nullptr};
+    bool storeFailed_ = false;
 
     std::mutex configMutex_;
     std::optional<config::Config> pendingConfig_;

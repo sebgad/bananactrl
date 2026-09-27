@@ -1,5 +1,8 @@
 #include "App.hpp"
 
+#include <array>
+#include <ctime>
+#include <string>
 #include <utility>
 
 #include "driver/ledc.h"
@@ -18,6 +21,9 @@ namespace {
 constexpr const char* kTag = "app";
 constexpr std::chrono::microseconds kTickPeriod{450'000}; // iInterruptLongIntervalMicros
 constexpr std::chrono::seconds kWatchdogTimeout{75};      // WDT_Timeout
+constexpr std::chrono::seconds kWifiTimeout{18};          // connectWiFi(3, 6000)
+constexpr std::chrono::seconds kTimeSyncTimeout{10};
+constexpr const char* kHostname = "coffee"; // http://coffee.local
 
 /// Boot-time objects without which the firmware cannot run: log and panic (-> reboot).
 template <typename T>
@@ -55,6 +61,45 @@ std::optional<drivers::Ads1115> createAds(hal::I2cDevice& device)
     return std::move(*ads);
 }
 
+bool startLogger(storage::FileLogger& logger, const storage::LittleFs& fs)
+{
+    const std::string root{fs.mountPoint()};
+    if (auto res = logger.start(root + "/logfile_recent.txt", root + "/logfile_last.txt"); !res) {
+        ESP_LOGE(kTag, "file logger failed: %s", esp_err_to_name(res.error()));
+        return false;
+    }
+    return true;
+}
+
+config::Config loadConfig(config::ConfigStore& store)
+{
+    const auto loaded = store.load();
+    switch (loaded.source) {
+    case config::ConfigStore::Source::File:
+        ESP_LOGI(kTag, "configuration loaded from %s", store.path().c_str());
+        break;
+    case config::ConfigStore::Source::FileCompleted:
+        ESP_LOGW(kTag, "missing keys in %s: defaults used and written back", store.path().c_str());
+        break;
+    case config::ConfigStore::Source::Defaults:
+        ESP_LOGW(kTag, "%s missing or invalid: factory settings used and written", store.path().c_str());
+        break;
+    }
+    if (loaded.writeError != ESP_OK) {
+        ESP_LOGE(kTag, "writing %s failed: %s", store.path().c_str(), esp_err_to_name(loaded.writeError));
+    }
+    return loaded.config;
+}
+
+/// Configured network, or the factory credentials from Kconfig if none is configured.
+net::WifiManager::Credentials wifiCredentials(const config::WifiSettings& wifi)
+{
+    if (!wifi.ssid.empty()) {
+        return {.ssid = wifi.ssid, .password = wifi.password};
+    }
+    return {.ssid = CONFIG_BANANA_WIFI_FACTORY_SSID, .password = CONFIG_BANANA_WIFI_FACTORY_PW};
+}
+
 void logI2cScan(const hal::I2cBus& bus)
 {
     // ADDR pin: GND 0x48, VDD 0x49, SDA 0x4A, SCL 0x4B
@@ -68,7 +113,9 @@ void logI2cScan(const hal::I2cBus& bus)
 } // namespace
 
 App::App()
-    : fs_(orAbort(storage::LittleFs::mount({}), "LittleFS mount")),
+    : nvs_(orAbort(storage::Nvs::init(), "NVS")),
+      fs_(orAbort(storage::LittleFs::mount({}), "LittleFS mount")), loggerStarted_(startLogger(logger_, fs_)),
+      configStore_(std::string{fs_.mountPoint()} + "/params.json"), config_(loadConfig(configStore_)),
       statusLed_(orAbort(hal::GpioOutput::create(board::kStatusLed), "status LED")),
       sensorSupply_(orAbort(hal::GpioOutput::create(board::kSensorSupply, true), "sensor supply")),
       i2cBus_(orAbort(hal::I2cBus::create({.sda = board::kI2cSda, .scl = board::kI2cScl}), "I2C bus")),
@@ -90,7 +137,7 @@ App::App()
                    .ssr = &ssr_,
                    .led = &rgbLed_,
                    .pumpRelay = &pumpRelay_,
-                   .network = &network_},
+                   .network = &wifi_},
                   config_),
       tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer"))
 {
@@ -132,6 +179,68 @@ void App::run()
                         .error_or(ESP_OK));
     ESP_ERROR_CHECK(tick_.start(kTickPeriod).error_or(ESP_OK));
     ESP_LOGI(kTag, "heater control running");
+
+    // After the heater: the connection attempt blocks for up to kWifiTimeout.
+    startNetwork();
+    // data.csv after the time sync, like the Arduino firmware (its header carries the timestamp)
+    startRecording();
+}
+
+void App::startRecording()
+{
+    storage::csv::Header header;
+    const std::time_t now = std::time(nullptr);
+    header.timestamp = net::TimeSync::now() ? std::to_string(static_cast<long long>(now)) : "unknown";
+    if (ads_) {
+        using drivers::ads1115::Register;
+        header.adsConfig = ads_->readRegister(Register::Config).value_or(0);
+        header.adsLowThreshold = ads_->readRegister(Register::LowThreshold).value_or(0);
+        header.adsHighThreshold = ads_->readRegister(Register::HighThreshold).value_or(0);
+    }
+    const std::string path = std::string{fs_.mountPoint()} + "/data.csv";
+    auto recorder = storage::MeasurementRecorder::create(path, header);
+    if (!recorder) {
+        ESP_LOGE(kTag, "%s: %s", path.c_str(), esp_err_to_name(recorder.error()));
+        return;
+    }
+    recorder_.emplace(std::move(*recorder));
+    heaterTask_.attachRecorder(&*recorder_);
+    ESP_LOGI(kTag, "recording to %s", path.c_str());
+}
+
+void App::startNetwork()
+{
+    const auto mode = wifi_.start(wifiCredentials(config_.wifi), kWifiTimeout);
+    if (!mode) {
+        ESP_LOGE(kTag, "Wi-Fi start failed: %s", esp_err_to_name(mode.error()));
+        return;
+    }
+
+    if (auto mdns = net::MdnsService::start(kHostname, "Silvia coffee control")) {
+        mdns_.emplace(std::move(*mdns));
+        ESP_LOGI(kTag, "mDNS: http://%s.local", kHostname);
+    } else {
+        ESP_LOGE(kTag, "mDNS failed: %s", esp_err_to_name(mdns.error()));
+    }
+
+    if (*mode != net::WifiManager::Mode::Station) {
+        return; // no internet in SoftAP mode
+    }
+    auto sync = net::TimeSync::start();
+    if (!sync) {
+        ESP_LOGE(kTag, "SNTP failed: %s", esp_err_to_name(sync.error()));
+        return;
+    }
+    timeSync_.emplace(std::move(*sync));
+    if (timeSync_->waitForSync(kTimeSyncTimeout)) {
+        if (const auto now = net::TimeSync::now()) {
+            std::array<char, 32> text{};
+            std::strftime(text.data(), text.size(), "%Y-%m-%d %H:%M:%S %Z", &*now);
+            ESP_LOGI(kTag, "local time %s", text.data());
+        }
+    } else {
+        ESP_LOGW(kTag, "time not synchronised yet (continues in the background)");
+    }
 }
 
 } // namespace banana

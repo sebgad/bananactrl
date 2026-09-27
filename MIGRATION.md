@@ -291,39 +291,56 @@ timeout behave like the Arduino firmware. Only then connect the machine.
 
 ---
 
-## Phase 5 — Networking (1–2 days)
+## Phase 5 — Networking (1–2 days) ✅
 
-1. `net::WifiManager` — constructor takes `const WifiSettings&` and factory credentials.
-   `Result<Mode> start(std::chrono::seconds timeout)` tries STA and falls back to SoftAP
-   `SilviaCoffeeCtrl`. Internal event handler via static trampoline; reconnects on
-   `WIFI_EVENT_STA_DISCONNECTED`. `isConnected()`, `rssiPercent()` (today `calcWifiStrength`).
-2. `net::MdnsService` (RAII `mdns_init/free`, hostname `coffee`, `_http._tcp` 80).
-3. `net::TimeSync` — `esp_netif_sntp_*`, TZ string (the fixed `+3600/+3600` offsets are wrong
-   in winter), `std::optional<std::tm> now()`.
-4. Factory credentials: `Kconfig.projbuild` → `CONFIG_BANANA_WIFI_FACTORY_SSID/PW`, values in the
-   git-ignored `sdkconfig.defaults.local`.
+1. `net::WifiManager : io::INetworkStatus` — `Result<Mode> start(Credentials, 18 s)` tries STA (as
+   `connectWiFi(3, 6000)`) and falls back to the open SoftAP `SilviaCoffeeCtrl` (192.168.4.1). Owns netif,
+   default event loop and Wi-Fi driver; not movable (the event handlers hold `this`). After a successful join
+   it reconnects on every `WIFI_EVENT_STA_DISCONNECTED`; disconnect reasons are logged with the RSSI.
+   `rssiPercent()` (`calcWifiStrength()`, now live instead of once at boot), `ipAddress()`.
+   `stationDisconnected()` feeds Diagnostics (LED purple, heating continues, see Phase 4).
+2. `net::MdnsService` (RAII `mdns_init/free`, hostname `coffee`, `_http._tcp` 80), component `espressif/mdns`.
+3. `net::TimeSync` — `esp_netif_sntp_*` with `europe.pool.ntp.org` and TZ `CET-1CEST,M3.5.0,M10.5.0/3`
+   (the fixed `+3600/+3600` offsets were wrong in winter), `std::optional<std::tm> now()`. Station mode only.
+4. `storage::Nvs` (RAII `nvs_flash_init`, erase on version change): the Wi-Fi driver needs NVS.
+5. Factory credentials: `Kconfig.projbuild` → `CONFIG_BANANA_WIFI_FACTORY_SSID/PW`, values in the
+   git-ignored `sdkconfig.defaults.local`. Used when `Config::wifi.ssid` is empty.
+6. Boot order changed: the heater starts first, Wi-Fi afterwards (the Arduino `setup()` blocked up to 18 s
+   in `connectWiFi()` before the heater was configured).
 
-✅ **Exit:** joins home Wi-Fi, falls back to SoftAP with a wrong SSID, `coffee.local` resolves, local time correct.
+✅ **Exit:** SoftAP fallback and mDNS verified on the bench (the board has a u.FL module without antenna,
+RSSI -91 dBm, so the station join failed with reason 2 "auth expire"). Station join, `coffee.local` in the home
+network and local time were not tested on hardware (skipped).
 
 ---
 
-## Phase 6 — Storage, config, logging (1 day)
+## Phase 6 — Storage, config, logging (1 day) ✅
 
-1. `storage::File` — RAII `FILE*` (`open(path, mode) → Result<File>`, `write(std::string_view)`,
-   `readAll()`). All paths under `/fs`.
-2. `config::ConfigStore` — `Result<Config> load()`, `Result<void> save(const Config&)`, `reset()`.
-   Keeps `/fs/params.json` with the **exact key names** (including the `HighTresholdValue` typo), so
-   existing files and `settings.html` keep working. Missing keys → defaults + write back (as today).
-   JSON mapping via ArduinoJson `convertToJson/convertFromJson` overloads per settings struct
-   instead of the 30-line ternary blocks. A `std::mutex` replaces `bParamFileLocked`.
-3. `storage::MeasurementRecorder` — writes the header (timestamp, ADS registers) and appends
-   `ProcessSnapshot` rows. Same CSV columns.
-4. `storage::FileLogger : rtos::Task` — registers itself via `esp_log_set_vprintf` (static trampoline),
-   formats to UART immediately, pushes the line into a FreeRTOS ringbuffer; the task appends to
-   `/fs/logfile_recent.txt`. Rotates `recent` → `last` in its constructor.
-   **[v6-check: log component was reworked in 5.5/6.0, confirm `esp_log_set_vprintf` behaviour]**
+1. `storage::File` — RAII `FILE*` (`open(path, mode) → Result<File>`, `write()`, `readAll()`, `flush()`),
+   `exists()`, `remove()`, `rename()`. All paths under `/fs`. **`flush()` = `fflush()` + `fsync()`:**
+   LittleFS commits only on sync/close, so without `fsync()` a reset lost everything written since opening
+   (seen on the bench). The Arduino firmware closed the file after every write.
+2. `config::ConfigJson` — pure codec `toJson(Config)` / `fromJson(json, base) → {Config, complete}` with the
+   **exact key names** (incl. `HighTresholdValue`). Missing keys keep the `base` value (defaults when loading,
+   current values for a partial `/paramUpdate`). Keys are tested with `isNull()`: the Arduino firmware used
+   the value's truthiness, so stored `false`/`0` (e.g. `CtrlPropActivate`, `SigFilterActive`) were replaced by
+   the defaults on every boot.
+3. `config::ConfigStore` — `load()` (never fails: defaults + write back if the file is missing/invalid or keys
+   are missing), `save()` (temporary file + atomic LittleFS rename), `reset()`. A `std::mutex` replaces
+   `bParamFileLocked`. Wi-Fi SSID empty = factory credentials (the Arduino firmware wrote the factory SSID and
+   password into params.json).
+4. `storage::MeasurementRecorder` + `storage::csv` — data.csv byte-compatible with the Arduino file
+   (7 header lines, CR LF, same number formats; graphs.html parses it by line index). Created after the time
+   sync; `HeaterTask` appends a row on every 450 ms tick. Timestamp `unknown` without NTP (the Arduino firmware
+   wrote an uninitialised buffer).
+5. `storage::FileLogger : rtos::Task` — `esp_log_set_vprintf` hook (static instance pointer: the hook has no
+   user argument) forwards to the UART, formats into a 256-byte stack buffer and pushes into an 8 KB ring
+   buffer; the task appends to `/fs/logfile_recent.txt`. Rotates `recent` → `last` at start and when recent
+   exceeds 512 KB. Started right after mounting, so boot messages end up in the file.
+   [v6-check done: `esp_log_set_vprintf()` unchanged in v6.1; log v1 emits one call per line.]
 
-✅ **Exit:** params survive reboot, defaults written back for missing keys, logs and data.csv downloadable.
+✅ **Exit:** params.json written with defaults and reloaded on the next boot, data.csv and both log files
+present after a reset (checked by reading the partition back). Download via HTTP follows in Phase 7.
 
 ---
 

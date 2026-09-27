@@ -122,6 +122,9 @@ void HeaterTask::run()
             snapshot_ = after;
         }
         report(before, after);
+        if ((bits & kTick) != 0) {
+            store(after);
+        }
         if ((bits & kTick) != 0 && ++reportTicks_ % kReportEveryTicks == 0) {
             ESP_LOGI(kTag, "T=%.2f C target=%.1f heater=%.1f counts brewing=%d standby=%d faults=0x%lX",
                      static_cast<double>(after.celsius), static_cast<double>(after.target),
@@ -131,6 +134,23 @@ void HeaterTask::run()
         if (watchdog) {
             watchdog->feed();
         }
+    }
+}
+
+void HeaterTask::store(const control::ProcessSnapshot& snapshot)
+{
+    storage::MeasurementRecorder* recorder = recorder_.load();
+    if (recorder == nullptr) {
+        return;
+    }
+    const storage::csv::Row row{.seconds = snapshot.seconds,
+                                .celsius = snapshot.celsius,
+                                .heaterPercent = snapshot.heaterPercent,
+                                .target = snapshot.target,
+                                .brewing = snapshot.brewing};
+    if (auto res = recorder->append(row); !res && !storeFailed_) {
+        ESP_LOGE(kTag, "data.csv write failed: %s", esp_err_to_name(res.error()));
+        storeFailed_ = true; // log once
     }
 }
 
