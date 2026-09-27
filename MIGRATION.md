@@ -414,19 +414,24 @@ OTA from the web UI boots the new image.
 
 ---
 
-## Phase 8 — Composition, validation, cut-over (1 day)
+## Phase 8 — Composition, validation, cut-over (1 day) — software done, machine tests pending
 
-1. `App` final form: members declared in dependency order (so destruction is reverse), `run()` does
-   boot sequence → `start()` tasks → returns (`app_main` task can end).
-2. Side-by-side: record `data.csv` from old and new firmware for one heat-up + one shot, compare with
-   `measurements/plot_measurement.py`.
-3. Soak test ≥ 24 h; `Diagnostics` also logs `esp_get_free_heap_size()` and
-   `heap_caps_get_minimum_free_size()`.
-4. **Note:** the first flash has to go over USB. The partition table changes, so Arduino's
-   `Update.h` OTA cannot install the IDF image. Back up `params.json` from the old firmware first
-   (settings page → download).
-5. Optional follow-ups: bundle a chart library into LittleFS (graphs in SoftAP mode), SSE endpoint instead
-   of polling, config in NVS.
+1. `App` final form ✅: members in dependency order (routes before `WebServer`, so the server stops first),
+   `run()` starts everything and returns; `app_main` ends, the static `App` lives on.
+2. **Pending (machine):** side-by-side `data.csv` of old and new firmware for one heat-up + one shot, compared
+   with `measurements/plot_measurement.py`. Includes the Pt1000 comparison and the LED colours.
+3. Soak test: `App::logHealth()` logs heap (free, minimum, largest block) and FileLogger drops/write errors
+   every 60 s. Bench 5 min: free 171 kB, minimum 166 kB, constant; 0 drops, 0 write errors.
+   **Pending:** ≥ 24 h.
+4. `data.csv` is committed every 10 rows (4.5 s) instead of every row: each sync of a partly filled LittleFS
+   block cost 43–49 ms (up to 320 ms) in the heater task. Effect on the bench: I2C NACKs (see Phase 7) dropped
+   from one per 9 s to one per 5 min, and 10× less flash wear. Trade-off: switching the machine off loses
+   up to 4.5 s of the recording (the Arduino firmware lost nothing, but also closed the file per row).
+5. Cut-over: [README.md](README.md). First flash over USB (`idf.py flash` — writes the LittleFS image, so
+   back up the config via Settings → Download config first and restore it with Upload config; the key names
+   are unchanged). Later updates: `app-flash` or web OTA, which keep settings and data.
+6. Optional follow-ups: bundle a chart library into LittleFS (graphs in SoftAP mode), SSE endpoint instead
+   of polling, config in NVS, root cause of the I2C NACK during flash writes.
 
 ---
 

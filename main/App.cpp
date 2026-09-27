@@ -7,6 +7,7 @@
 
 #include "driver/ledc.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "sdkconfig.h"
@@ -24,6 +25,7 @@ constexpr std::chrono::microseconds kTickPeriod{450'000}; // iInterruptLongInter
 constexpr std::chrono::seconds kWatchdogTimeout{75};      // WDT_Timeout
 constexpr std::chrono::seconds kWifiTimeout{18};          // connectWiFi(3, 6000)
 constexpr std::chrono::seconds kTimeSyncTimeout{10};
+constexpr std::chrono::seconds kHealthPeriod{60};
 constexpr const char* kHostname = "coffee"; // http://coffee.local
 
 /// Boot-time objects without which the firmware cannot run: log and panic (-> reboot).
@@ -141,6 +143,7 @@ App::App()
                    .network = &wifi_},
                   config_),
       tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer")),
+      health_(orAbort(hal::PeriodicTimer::create("health", &App::logHealth, this), "health timer")),
       apiRoutes_(configStore_, heaterTask_, wifi_), otaRoutes_(std::string{fs_.mountPoint()}),
       staticRoutes_(std::string{fs_.mountPoint()})
 {
@@ -181,6 +184,7 @@ void App::run()
     ESP_ERROR_CHECK(pumpRelay_.onEdge(hal::GpioInput::Edge::Any, &HeaterTask::onPumpEdgeIsr, &heaterTask_)
                         .error_or(ESP_OK));
     ESP_ERROR_CHECK(tick_.start(kTickPeriod).error_or(ESP_OK));
+    ESP_ERROR_CHECK(health_.start(kHealthPeriod).error_or(ESP_OK));
     ESP_LOGI(kTag, "heater control running");
 
     // After the heater: the connection attempt blocks for up to kWifiTimeout.
@@ -210,6 +214,16 @@ void App::startRecording()
     recorder_.emplace(std::move(*recorder));
     heaterTask_.attachRecorder(&*recorder_);
     ESP_LOGI(kTag, "recording to %s", path.c_str());
+}
+
+void App::logHealth(void* arg)
+{
+    const auto* app = static_cast<const App*>(arg);
+    ESP_LOGI(kTag, "health: heap free %lu, min %lu, largest block %zu; log dropped %zu, write errors %zu",
+             static_cast<unsigned long>(esp_get_free_heap_size()),
+             static_cast<unsigned long>(esp_get_minimum_free_heap_size()),
+             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT), app->logger_.droppedLines(),
+             app->logger_.writeErrors());
 }
 
 void App::startWebServer()

@@ -56,6 +56,8 @@ private:
     void startNetwork();
     void startRecording();
     void startWebServer();
+    /// Once a minute: heap and logger statistics (soak test, Phase 8).
+    static void logHealth(void* arg);
 
     storage::Nvs nvs_;
     storage::LittleFs fs_;
@@ -78,6 +80,7 @@ private:
     rtos::EventGroup events_;
     HeaterTask heaterTask_;
     hal::PeriodicTimer tick_;
+    hal::PeriodicTimer health_;
     std::optional<net::MdnsService> mdns_;
     std::optional<net::TimeSync> timeSync_;
     web::ApiRoutes apiRoutes_;

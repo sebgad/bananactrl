@@ -10,8 +10,14 @@
 namespace banana::storage {
 
 /// /fs/data.csv: recreated with a header at start, one row per 450 ms tick (writeMeasFile()).
+///
+/// Committed to flash every kSyncEveryRows rows, not per row: a LittleFS sync of a partly filled block
+/// rewrites that block (43-49 ms, up to 320 ms with a metadata compaction, measured), which blocked the
+/// heater task on every tick. A reset loses at most the last kSyncEveryRows rows.
 class MeasurementRecorder {
 public:
+    static constexpr unsigned kSyncEveryRows = 10; ///< 4.5 s
+
     [[nodiscard]] static Result<MeasurementRecorder> create(const std::string& path,
                                                             const csv::Header& header);
 
@@ -23,6 +29,7 @@ private:
 
     File file_;
     bool started_ = false;
+    unsigned unsyncedRows_ = 0;
     float startSeconds_ = 0.0F;
 };
 

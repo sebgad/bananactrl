@@ -27,7 +27,11 @@ Result<void> MeasurementRecorder::append(csv::Row row)
     if (auto res = file_.write(csv::row(row)); !res) {
         return res;
     }
-    return file_.flush(); // visible to /data.csv downloads right away
+    if (++unsyncedRows_ < kSyncEveryRows) {
+        return {};
+    }
+    unsyncedRows_ = 0;
+    return file_.flush(); // committed: survives a reset and is visible to /data.csv downloads
 }
 
 } // namespace banana::storage
