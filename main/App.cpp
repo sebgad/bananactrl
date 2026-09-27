@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "driver/ledc.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -9,11 +10,14 @@
 
 #include "banana/core/board.hpp"
 #include "banana/drivers/Pt1000.hpp"
+#include "banana/rtos/Watchdog.hpp"
 
 namespace banana {
 namespace {
 
 constexpr const char* kTag = "app";
+constexpr std::chrono::microseconds kTickPeriod{450'000}; // iInterruptLongIntervalMicros
+constexpr std::chrono::seconds kWatchdogTimeout{75};      // WDT_Timeout
 
 /// Boot-time objects without which the firmware cannot run: log and panic (-> reboot).
 template <typename T>
@@ -70,15 +74,35 @@ App::App()
       i2cBus_(orAbort(hal::I2cBus::create({.sda = board::kI2cSda, .scl = board::kI2cScl}), "I2C bus")),
       adsDevice_(orAbort(i2cBus_.addDevice(drivers::Ads1115::kDefaultAddress), "ADS1115 device")),
       ads_(createAds(adsDevice_)),
+      ssr_(orAbort(drivers::Ssr::create(board::kSsrPwm, LEDC_TIMER_0, LEDC_CHANNEL_0, config_.ssr), "SSR")),
+      rgbLed_(orAbort(drivers::RgbLed::create(
+                          {.red = board::kLedRed, .green = board::kLedGreen, .blue = board::kLedBlue},
+                          LEDC_TIMER_1, {LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3}, config_.led),
+                      "RGB LED")),
       // ALERT/RDY is open drain; the internal pull-up helps on boards without the external 10k.
       adsReady_(
-          orAbort(hal::GpioInput::create(board::kAdsAlertRdy, hal::GpioInput::Pull::Up), "ADS ready pin"))
+          orAbort(hal::GpioInput::create(board::kAdsAlertRdy, hal::GpioInput::Pull::Up), "ADS ready pin")),
+      pumpRelay_(
+          orAbort(hal::GpioInput::create(board::kPumpRelay, hal::GpioInput::Pull::Down), "pump relay pin")),
+      events_(orAbort(rtos::EventGroup::create(), "event group")),
+      heaterTask_(events_,
+                  {.sensor = ads_ ? static_cast<io::ITemperatureSensor*>(&*ads_) : &missingSensor_,
+                   .ssr = &ssr_,
+                   .led = &rgbLed_,
+                   .pumpRelay = &pumpRelay_,
+                   .network = &network_},
+                  config_),
+      tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer"))
 {
 }
 
 void App::run()
 {
     ESP_LOGI(kTag, "bananactrl starting, last reset reason: %d", static_cast<int>(esp_reset_reason()));
+
+    // Early, so errors can be shown on the LED (as in the Arduino setup())
+    rgbLed_.show(io::LedColor::White, true);
+    statusLed_.set(true);
 
     if (auto info = fs_.info()) {
         ESP_LOGI(kTag, "LittleFS on %.*s: %zu of %zu bytes used", static_cast<int>(fs_.mountPoint().size()),
@@ -88,23 +112,26 @@ void App::run()
     }
 
     ESP_LOGI(kTag, "Pt1000 conversion: %s (0 V -> %.2f C)", kConverterName, kConverter.toCelsius(0.0F));
-
     logI2cScan(i2cBus_);
     if (ads_) {
         if (auto config = ads_->readConfig()) {
             ESP_LOGI(kTag, "ADS1115 config: %s", config->toString().c_str());
         }
-        sensorMonitor_.emplace(*ads_);
-        ESP_ERROR_CHECK(sensorMonitor_->start("sensor", 4096, 5).error_or(ESP_OK));
-        // Only after the task exists: the ISR notifies it.
-        if (auto res = adsReady_.onEdge(hal::GpioInput::Edge::Rising, &SensorMonitor::onConversionReady,
-                                        &*sensorMonitor_);
-            !res) {
-            ESP_LOGE(kTag, "ADS ready interrupt failed: %s", esp_err_to_name(res.error()));
-        }
     }
 
-    statusLed_.set(true);
+    ESP_ERROR_CHECK(rtos::Watchdog::configure(kWatchdogTimeout, true).error_or(ESP_OK));
+    ESP_ERROR_CHECK(heaterTask_.start("heater", 4096, 5).error_or(ESP_OK));
+
+    // Interrupt sources only after the task exists: they set its event bits.
+    if (ads_) {
+        ESP_ERROR_CHECK(
+            adsReady_.onEdge(hal::GpioInput::Edge::Rising, &HeaterTask::onSampleReadyIsr, &heaterTask_)
+                .error_or(ESP_OK));
+    }
+    ESP_ERROR_CHECK(pumpRelay_.onEdge(hal::GpioInput::Edge::Any, &HeaterTask::onPumpEdgeIsr, &heaterTask_)
+                        .error_or(ESP_OK));
+    ESP_ERROR_CHECK(tick_.start(kTickPeriod).error_or(ESP_OK));
+    ESP_LOGI(kTag, "heater control running");
 }
 
 } // namespace banana

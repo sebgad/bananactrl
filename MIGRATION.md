@@ -252,27 +252,39 @@ Pt1000 against the Arduino firmware is still open (needs the machine board, see 
 
 ## Phase 4 — Actuators and control (2 days)
 
-1. HAL: `hal::LedcTimer` (freq, resolution; `reconfigure()`), `hal::PwmChannel` (`setDuty(float 0..1)`),
-   `hal::PeriodicTimer` (RAII `esp_timer`, `std::function`-free callback via trampoline),
-   `hal::GpioInput` (pull mode, `onEdge(IsrCallback, void*)`), `rtos::EventGroup`, `rtos::Watchdog`.
-2. Drivers: `drivers::Ssr : IPwmOutput` on LEDC timer 0 (15 Hz). `drivers::RgbLed` owns three
-   `PwmChannel`s on LEDC timer 1 (500 Hz) and does gain and saturation (today `setColor`).
-3. Control:
-   - `control::StatusIndicator` — pure mapping `(Fault, BrewState, temp, target) → LedColor`, testable.
-   - `control::BrewDetector` — ISR stores timestamp + sets event bit, `update(now)` debounces 200 ms
-     and returns `BrewState`.
-   - `control::Diagnostics` — evaluates temp range, ADS mode reset, Wi-Fi state → `Flags<Fault>`.
-   - `control::HeaterController : rtos::Task` — owns the loop that replaces `loop()`
-     and switches between `PidController` and `BrewFeedForward` (reset PID when brewing ends):
-     waits on `EventGroup` bits (`SampleReady`, `Tick450ms`, `BrewEdge`, `ConfigChanged`),
-     calls the parts above in the same order and with the same dividers (`%3` PID, `%3` LED, `%2` DIAG),
-     feeds `Watchdog`, publishes `ProcessSnapshot` under a mutex. `applyConfig(const Config&)`
-     replaces `configPID()`/`configLED()` and is **only** called from inside the task.
-4. Arduino bugs that the new types fix on their own:
+1. HAL: `hal::LedcTimer` (freq, resolution; `reconfigure()`), `hal::PwmChannel` (`setCounts()`, duty in
+   counts like `ledcWrite()`), `hal::PeriodicTimer` (RAII `esp_timer`, plain callback + `void*`),
+   `rtos::EventGroup`, `rtos::Watchdog` (`configure(75 s, panic)` + RAII subscription of the calling task).
+2. Hardware interfaces in `banana_core/io` so that `control` depends on nothing below it:
+   `ITemperatureSensor` (+ `healthy()`, `setFilterActive()`), `IPwmOutput`, `IStatusLed`, `IDigitalInput`,
+   `INetworkStatus`. Host tests use fakes (`test/host/fakes.hpp`, `shim/esp_err.h`).
+3. Drivers: `drivers::Ssr : IPwmOutput` on LEDC timer 0 (15 Hz). `drivers::RgbLed : IStatusLed` owns three
+   `PwmChannel`s on LEDC timer 1 (500 Hz); the colour mixing of `setColor()` is the pure `rgbCounts()`.
+4. Control (all pure, host-tested):
+   - `control::indicate()` — `(Faults, brewing, temp, target) → LedCommand`.
+   - `control::BrewDetector` — first edge starts a 200 ms window, then the pin level decides. The ISR only
+     sets an event bit; the task timestamps it.
+   - `control::diagnose()` — temp < 10 °C, ADC not in continuous mode / not answering, Wi-Fi → `Flags<Fault>`.
+   - `control::ControlLoop` — the Arduino `loop()`/`controlHeating()` without RTOS: `onSample()` (8 SPS,
+     PID or brew feed-forward on every 3rd), `onTick()` (450 ms: LED every 3rd, DIAG every 2nd), standby.
+5. `HeaterTask : rtos::Task` (main/) instead of `HeaterController` in `control` (keeps `control` free of
+   FreeRTOS): waits on `EventGroup` bits (`SampleReady`, `Tick`, `PumpEdge`, `ConfigChanged`), calls the
+   `ControlLoop` in the Arduino order, feeds the watchdog, publishes `ProcessSnapshot` under a `std::mutex`.
+   `requestConfig()` from other tasks → applied inside the task (SSR/LED timers + `ControlLoop::applyConfig()`).
+   Faults, brewing and standby are logged on change (Arduino repeated fault messages every 0.9 s).
+6. Arduino bugs that the new types fix on their own:
    - `NO_ERROR = 1u << 0` is a bit, so `iErrorId == WIFI_DISCONNECT` is never true.
      With `Flags<Fault>` + `none()`/`only(Fault::WifiDisconnect)` this can't happen.
    - `/paramReset` reconfigures the PID from the web task → now only a `ConfigChanged` event.
    - Unprotected `&= ~BREWING_DETECTION` / `iInterruptCntPump++` → event group is atomic.
+7. Kept on purpose (Arduino behaviour): standby counts from boot, not from the last use, and lasts until
+   reboot.
+8. Changed on purpose:
+   - A Wi-Fi fault only turns the LED purple; only temperature and ADC faults switch the heater off
+     (`control::blocksHeating()`). The Arduino firmware stopped heating on any fault.
+   - Safety fix (found in the bench fault test): the Arduino firmware wrote the SSR only in the PID step,
+     which the ADC's ready pulse triggers, so a dead ADC left the last duty on the heater. Now a blocking
+     fault or standby switches the heater off at once, and no conversion for 1 s counts as ADC fault.
 
 ✅ **Exit:** on the bench (heater through a dummy load), LED colours, SSR duty, brew detection and standby
 timeout behave like the Arduino firmware. Only then connect the machine.

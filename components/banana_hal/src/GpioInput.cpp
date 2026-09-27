@@ -62,9 +62,10 @@ GpioInput::~GpioInput()
 
 Result<void> GpioInput::onEdge(Edge edge, IsrCallback callback, void* arg)
 {
-    // One shared ISR service for all pins; a second install reports ESP_ERR_INVALID_STATE.
-    if (const esp_err_t err = gpio_install_isr_service(0); err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return fail(err);
+    // One shared ISR service for all pins, installed on first use (thread-safe static init).
+    static const esp_err_t kServiceInstalled = gpio_install_isr_service(0);
+    if (kServiceInstalled != ESP_OK) {
+        return fail(kServiceInstalled);
     }
     disableInterrupt();
     if (auto res = toResult(gpio_set_intr_type(pin_, toIntrType(edge))); !res) {

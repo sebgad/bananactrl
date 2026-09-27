@@ -6,8 +6,8 @@
 #include "banana/drivers/Ads1115Config.hpp"
 #include "banana/drivers/MovingAverage.hpp"
 #include "banana/drivers/TemperatureConverter.hpp"
-#include "banana/drivers/TemperatureSensor.hpp"
 #include "banana/hal/I2cDevice.hpp"
+#include "banana/io/TemperatureSensor.hpp"
 
 namespace banana::drivers {
 
@@ -15,7 +15,7 @@ namespace banana::drivers {
 ///
 /// The ALERT/RDY pin is not part of the driver: wire a hal::GpioInput to it and call
 /// readCelsius() after each conversion-ready edge.
-class Ads1115 final : public ITemperatureSensor {
+class Ads1115 final : public io::ITemperatureSensor {
 public:
     static constexpr std::uint16_t kDefaultAddress = 0x48; ///< ADDR pin on GND
     static constexpr std::size_t kFilterLength = 12;       ///< ADS1115_CONV_BUF_SIZE of the Arduino driver
@@ -41,6 +41,9 @@ public:
     [[nodiscard]] Result<void> configure(const Settings& settings);
 
     [[nodiscard]] Result<float> readCelsius() override;
+    /// Answers and is still in continuous mode (a power-on reset falls back to single-shot).
+    [[nodiscard]] bool healthy() override;
+    void setFilterActive(bool active) override { settings_.filterActive = active; }
 
     /// Reads the conversion register, feeds the filter and returns the (filtered) bridge voltage.
     [[nodiscard]] Result<float> readVolts();
@@ -48,7 +51,6 @@ public:
     [[nodiscard]] Result<ads1115::ConfigRegister> readConfig();
     [[nodiscard]] Result<std::uint16_t> readRegister(ads1115::Register reg);
 
-    void setFilterActive(bool active) { settings_.filterActive = active; }
     [[nodiscard]] const Settings& settings() const { return settings_; }
     /// Raw value of the latest conversion (unfiltered).
     [[nodiscard]] std::int16_t latestRaw() const { return filter_.latest(); }

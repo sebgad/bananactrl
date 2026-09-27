@@ -3,11 +3,12 @@
 #include "hal/gpio_types.h"
 
 #include "banana/core/Result.hpp"
+#include "banana/io/Outputs.hpp"
 
 namespace banana::hal {
 
 /// Digital input with optional edge interrupt. Resets the pin (and removes the ISR) in its destructor.
-class GpioInput {
+class GpioInput final : public io::IDigitalInput {
 public:
     enum class Pull { None, Up, Down };
     enum class Edge { Rising, Falling, Any };
@@ -21,13 +22,13 @@ public:
     GpioInput& operator=(const GpioInput&) = delete;
     GpioInput(GpioInput&& other) noexcept;
     GpioInput& operator=(GpioInput&& other) noexcept;
-    ~GpioInput();
+    ~GpioInput() override;
 
     /// Enables the interrupt. `arg` is passed to `callback` unchanged (typically `this` of the owner).
     [[nodiscard]] Result<void> onEdge(Edge edge, IsrCallback callback, void* arg);
     void disableInterrupt();
 
-    [[nodiscard]] bool level() const;
+    [[nodiscard]] bool level() const override;
     [[nodiscard]] gpio_num_t pin() const { return pin_; }
 
 private:

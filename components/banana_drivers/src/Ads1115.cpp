@@ -57,6 +57,12 @@ Result<float> Ads1115::readCelsius()
     return converter_->toCelsius(*volts);
 }
 
+bool Ads1115::healthy()
+{
+    const auto config = readConfig();
+    return config && config->mode == ads1115::Mode::Continuous;
+}
+
 Result<float> Ads1115::readVolts()
 {
     auto raw = readRegister(Register::Conversion);
