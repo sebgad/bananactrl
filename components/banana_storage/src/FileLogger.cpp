@@ -21,7 +21,7 @@ FileLogger::~FileLogger()
     }
 }
 
-Result<void> FileLogger::start(std::string recentPath, std::string lastPath)
+Result<void> FileLogger::start(std::string recentPath, std::string lastPath, BaseType_t core)
 {
     recentPath_ = std::move(recentPath);
     lastPath_ = std::move(lastPath);
@@ -42,7 +42,7 @@ Result<void> FileLogger::start(std::string recentPath, std::string lastPath)
         return fail(ESP_ERR_INVALID_STATE); // only one logger
     }
     previous_ = esp_log_set_vprintf(&FileLogger::logHook);
-    return Task::start("filelog", 4096, 2);
+    return Task::start("filelog", 4096, 2, core);
 }
 
 int FileLogger::logHook(const char* format, va_list args)

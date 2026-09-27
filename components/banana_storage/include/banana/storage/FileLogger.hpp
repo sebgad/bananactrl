@@ -30,9 +30,10 @@ public:
     FileLogger& operator=(FileLogger&&) = delete;
     ~FileLogger();
 
-    /// Rotates the files, installs the log hook and starts the writer task. Lines logged before the task
-    /// runs are kept in the ring buffer.
-    [[nodiscard]] Result<void> start(std::string recentPath, std::string lastPath);
+    /// Rotates the files, installs the log hook and starts the writer task on `core`. Lines logged before the
+    /// task runs are kept in the ring buffer.
+    [[nodiscard]] Result<void> start(std::string recentPath, std::string lastPath,
+                                     BaseType_t core = tskNO_AFFINITY);
 
     [[nodiscard]] std::size_t droppedLines() const { return dropped_.load(); }
     [[nodiscard]] std::size_t writeErrors() const { return writeErrors_.load(); }

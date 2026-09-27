@@ -3,7 +3,7 @@
 Temperature control for a Rancilio Silvia espresso machine on a SparkFun ESP32 Thing Plus: Pt1000 via
 ADS1115, PID-controlled SSR, RGB status LED, web UI with graphs, settings and OTA.
 ESP-IDF v6.1 port of the Arduino firmware `coffee_ctrl_main`; see [MIGRATION.md](MIGRATION.md) for the design
-and the differences.
+and the differences, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for components, tasks and data flow.
 
 ## Build
 

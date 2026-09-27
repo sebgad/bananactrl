@@ -430,7 +430,11 @@ OTA from the web UI boots the new image.
 5. Cut-over: [README.md](README.md). First flash over USB (`idf.py flash` — writes the LittleFS image, so
    back up the config via Settings → Download config first and restore it with Upload config; the key names
    are unchanged). Later updates: `app-flash` or web OTA, which keep settings and data.
-6. Optional follow-ups: bundle a chart library into LittleFS (graphs in SoftAP mode), SSE endpoint instead
+6. `heater` and `filelog` are pinned to core 1 (`kControlCore`): log writes then rarely overlap an ADS1115
+   read. Stress build (log line per tick, 170 s): I2C NACKs 16 unpinned, 23 on core 0, 0–1 on core 1;
+   normal build: 0 in 3 min. Before, the heater task landed on core 1 only through ESP-IDF's automatic FPU
+   pinning. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+7. Optional follow-ups: bundle a chart library into LittleFS (graphs in SoftAP mode), SSE endpoint instead
    of polling, config in NVS, root cause of the I2C NACK during flash writes.
 
 ---

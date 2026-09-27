@@ -26,6 +26,10 @@ constexpr std::chrono::seconds kWatchdogTimeout{75};      // WDT_Timeout
 constexpr std::chrono::seconds kWifiTimeout{18};          // connectWiFi(3, 6000)
 constexpr std::chrono::seconds kTimeSyncTimeout{10};
 constexpr std::chrono::seconds kHealthPeriod{60};
+// Heater task and log writer share a core: they then take turns (the heater has the higher priority), so a
+// log flash write rarely overlaps an ADS1115 read. Bench, stress build (a log line per tick), 170 s: I2C
+// NACKs 16 unpinned, 23 with the logger on core 0, 0-1 on core 1. Wi-Fi runs on core 0.
+constexpr BaseType_t kControlCore = 1;
 constexpr const char* kHostname = "coffee"; // http://coffee.local
 
 /// Boot-time objects without which the firmware cannot run: log and panic (-> reboot).
@@ -67,7 +71,8 @@ std::optional<drivers::Ads1115> createAds(hal::I2cDevice& device)
 bool startLogger(storage::FileLogger& logger, const storage::LittleFs& fs)
 {
     const std::string root{fs.mountPoint()};
-    if (auto res = logger.start(root + "/logfile_recent.txt", root + "/logfile_last.txt"); !res) {
+    if (auto res = logger.start(root + "/logfile_recent.txt", root + "/logfile_last.txt", kControlCore);
+        !res) {
         ESP_LOGE(kTag, "file logger failed: %s", esp_err_to_name(res.error()));
         return false;
     }
@@ -173,7 +178,7 @@ void App::run()
     }
 
     ESP_ERROR_CHECK(rtos::Watchdog::configure(kWatchdogTimeout, true).error_or(ESP_OK));
-    ESP_ERROR_CHECK(heaterTask_.start("heater", 4096, 5).error_or(ESP_OK));
+    ESP_ERROR_CHECK(heaterTask_.start("heater", 4096, 5, kControlCore).error_or(ESP_OK));
 
     // Interrupt sources only after the task exists: they set its event bits.
     if (ads_) {
