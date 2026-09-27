@@ -67,6 +67,29 @@ The settings page never shows the stored Wi-Fi password; leaving the field empty
 | `/ota.html`          | firmware and data file upload                             |
 | `/log.html`          | `logfile_recent.txt` (this session), `logfile_last.txt` (previous session) |
 
+## Home Assistant (MQTT, optional)
+
+Settings → section **MQTT**: `MqttEnabled`, `MqttHost` (e.g. the Home Assistant host with the Mosquitto add-on),
+`MqttPort` (1883), `MqttUser`, `MqttPassword` (never shown; empty keeps the stored one). Save, then **Restart**.
+MQTT only runs when the ESP is connected to a Wi-Fi network (not in SoftAP mode).
+
+The device appears in Home Assistant via MQTT discovery as **BananaCoffee** with:
+
+| Entity                   | Type          | Notes                                                        |
+|--------------------------|---------------|--------------------------------------------------------------|
+| Temperature              | sensor        | °C                                                           |
+| Heater power             | sensor        | %                                                            |
+| Time to standby          | sensor        | min until standby (counted from boot, as before)            |
+| Brewing, Standby         | binary_sensor |                                                              |
+| Fault, Fault details     | binary_sensor, sensor | diagnostic                                           |
+| Wi-Fi signal             | sensor        | %, diagnostic                                                |
+| Target temperature       | number        | 60–100 °C, step 0.5 (limits enforced on the device)          |
+| Standby after            | number        | 10–600 min; below the uptime = standby now                   |
+| Restart                  | button        | also leaves standby                                          |
+
+Changes from Home Assistant are saved like changes on the settings page. State is published every 5 s;
+availability via `bananactrl/<id>/availability` (last will `offline`).
+
 ## Tests and checks
 
 ```sh

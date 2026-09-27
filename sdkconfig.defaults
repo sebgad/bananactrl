@@ -17,3 +17,7 @@ CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 
 # OTA: a new image must confirm itself (web server up), otherwise the bootloader returns to the old one
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# The boot code (App constructor: config JSON parsing with several Config copies) runs in the main task.
+# 3584 overflowed once the MQTT settings were added; the task ends after App::run(), its stack is freed.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

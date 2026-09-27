@@ -104,6 +104,17 @@ struct SystemSettings {
     friend constexpr bool operator==(const SystemSettings&, const SystemSettings&) = default;
 };
 
+/// Optional MQTT connection to Home Assistant (banana_mqtt). Applied at boot.
+struct MqttSettings {
+    bool enabled = false;
+    std::string host; ///< broker hostname or IP, e.g. the Home Assistant host running Mosquitto
+    std::uint32_t port = 1883;
+    std::string user;
+    std::string password;
+
+    friend bool operator==(const MqttSettings&, const MqttSettings&) = default;
+};
+
 struct Config {
     WifiSettings wifi;
     PidSettings pid;
@@ -111,6 +122,7 @@ struct Config {
     LedSettings led;
     SignalSettings signal;
     SystemSettings system;
+    MqttSettings mqtt;
 
     friend bool operator==(const Config&, const Config&) = default;
 };

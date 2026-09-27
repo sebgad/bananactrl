@@ -27,7 +27,8 @@ add_library(banana_logic STATIC
     ${COMPONENTS}/banana_control/src/ControlLoop.cpp
     ${COMPONENTS}/banana_drivers/src/Ads1115Config.cpp
     ${COMPONENTS}/banana_drivers/src/TemperatureConverters.cpp
-    ${COMPONENTS}/banana_web/src/LiveValues.cpp)
+    ${COMPONENTS}/banana_web/src/LiveValues.cpp
+    ${COMPONENTS}/banana_mqtt/src/HomeAssistant.cpp)
 target_include_directories(banana_logic PUBLIC
     ${COMPONENTS}/banana_config/include
     ${COMPONENTS}/banana_control/include
@@ -35,6 +36,7 @@ target_include_directories(banana_logic PUBLIC
     ${COMPONENTS}/banana_storage/include
     ${COMPONENTS}/banana_core/include
     ${COMPONENTS}/banana_web/include
+    ${COMPONENTS}/banana_mqtt/include
     # esp_err.h stand-in for banana::Result
     ${CMAKE_CURRENT_LIST_DIR}/shim)
 target_include_directories(banana_logic SYSTEM PUBLIC ${ARDUINOJSON})
@@ -51,6 +53,7 @@ add_executable(host_tests
     test_config.cpp
     test_config_json.cpp
     test_flags.cpp
+    test_home_assistant.cpp
     test_measurement_csv.cpp
     test_pid_controller.cpp
     test_status.cpp

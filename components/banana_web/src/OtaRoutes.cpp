@@ -6,6 +6,7 @@
 
 #include "esp_log.h"
 
+#include "banana/rtos/Restart.hpp"
 #include "banana/storage/File.hpp"
 #include "banana/web/OtaUpdater.hpp"
 #include "banana/web/WebPaths.hpp"
@@ -118,7 +119,7 @@ esp_err_t OtaRoutes::firmware(HttpRequest& request)
              update->partition()->label);
     request.setHeader("Connection", "close");
     request.sendText(Status::Ok, "Firmware flash OK");
-    restartAfter(kRestartDelay);
+    rtos::restartAfter(kRestartDelay);
 }
 
 esp_err_t OtaRoutes::dataFile(HttpRequest& request)

@@ -1,0 +1,3 @@
+dependencies:
+  espressif/mqtt: "^1.0.0"
+  bblanchon/arduinojson: "^7.4.3"

@@ -13,6 +13,7 @@
 #include "banana/hal/PeriodicTimer.hpp"
 #include "banana/io/Outputs.hpp"
 #include "banana/io/TemperatureSensor.hpp"
+#include "banana/mqtt/MqttService.hpp"
 #include "banana/net/MdnsService.hpp"
 #include "banana/net/TimeSync.hpp"
 #include "banana/net/WifiManager.hpp"
@@ -57,6 +58,7 @@ private:
     void startNetwork();
     void startRecording();
     void startWebServer();
+    void startMqtt();
     /// Once a minute: heap and logger statistics (soak test, Phase 8).
     static void logHealth(void* arg);
 
@@ -84,6 +86,7 @@ private:
     hal::PeriodicTimer health_;
     std::optional<net::MdnsService> mdns_;
     std::optional<net::TimeSync> timeSync_;
+    mqtt::MqttService mqtt_; ///< connects only if enabled in the settings (and in station mode)
     web::ApiRoutes apiRoutes_;
     web::OtaRoutes otaRoutes_;
     web::StaticFileRoutes staticRoutes_;

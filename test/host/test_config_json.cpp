@@ -37,8 +37,10 @@ TEST(ConfigJson, ReadsArduinoFile)
 {
     const auto parsed = fromJson(kArduinoFile);
     ASSERT_TRUE(parsed.has_value());
-    EXPECT_TRUE(parsed->complete);
+    EXPECT_FALSE(parsed->complete); // no "MQTT" section in Arduino files: defaults, written back
     const Config& c = parsed->config;
+    EXPECT_FALSE(c.mqtt.enabled);
+    EXPECT_EQ(c.mqtt.port, 1883U);
     EXPECT_EQ(c.wifi.ssid, "HomeNet");
     EXPECT_EQ(c.wifi.password, "secret");
     EXPECT_FALSE(c.pid.timeFactor);
@@ -167,6 +169,27 @@ TEST(ConfigJson, WebUpdateAcceptsNumbersAsStrings)
     EXPECT_FALSE(updated->pid.propActive);
     EXPECT_EQ(updated->ssr.frequencyHz, 20U);
     EXPECT_FALSE(applyWebUpdate("{broken", Config{}).has_value());
+}
+
+TEST(ConfigJson, MqttSettingsRoundTripAndHiddenPassword)
+{
+    Config config;
+    config.mqtt = {
+        .enabled = true, .host = "homeassistant.local", .port = 1884, .user = "coffee", .password = "pw"};
+    const auto parsed = fromJson(toJson(config));
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_TRUE(parsed->complete);
+    EXPECT_EQ(parsed->config.mqtt, config.mqtt);
+
+    EXPECT_EQ(toPublicJson(config).find("\"pw\""), std::string::npos);
+    const auto updated = applyWebUpdate(
+        R"({"MQTT": {"MqttEnabled": true, "MqttHost": "10.0.0.2", "MqttPort": "1883", "MqttPassword": ""}})",
+        config);
+    ASSERT_TRUE(updated.has_value());
+    EXPECT_EQ(updated->mqtt.host, "10.0.0.2");
+    EXPECT_EQ(updated->mqtt.port, 1883U);
+    EXPECT_EQ(updated->mqtt.user, "coffee");
+    EXPECT_EQ(updated->mqtt.password, "pw"); // empty keeps the stored one
 }
 
 } // namespace

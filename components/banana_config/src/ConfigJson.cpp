@@ -80,6 +80,13 @@ std::string toJson(const Config& c)
     doc["Signal"]["SigFilterActive"] = c.signal.filterActive;
     doc["System"]["TimeToStandby"] = static_cast<std::uint32_t>(c.system.timeToStandby.count());
 
+    JsonObject mqtt = doc["MQTT"].to<JsonObject>();
+    mqtt["MqttEnabled"] = c.mqtt.enabled;
+    mqtt["MqttHost"] = c.mqtt.host;
+    mqtt["MqttPort"] = c.mqtt.port;
+    mqtt["MqttUser"] = c.mqtt.user;
+    mqtt["MqttPassword"] = c.mqtt.password;
+
     std::string json;
     serializeJsonPretty(doc, json);
     return json;
@@ -141,6 +148,13 @@ Result<ParsedConfig> fromJson(std::string_view json, const Config& base)
     read(doc["Signal"], "SigFilterActive", c.signal.filterActive, ok);
     read(doc["System"], "TimeToStandby", c.system.timeToStandby, ok);
 
+    const JsonVariantConst mqtt = doc["MQTT"];
+    read(mqtt, "MqttEnabled", c.mqtt.enabled, ok);
+    read(mqtt, "MqttHost", c.mqtt.host, ok);
+    read(mqtt, "MqttPort", c.mqtt.port, ok);
+    read(mqtt, "MqttUser", c.mqtt.user, ok);
+    read(mqtt, "MqttPassword", c.mqtt.password, ok);
+
     return parsed;
 }
 
@@ -148,6 +162,7 @@ std::string toPublicJson(const Config& config)
 {
     Config redacted = config;
     redacted.wifi.password.clear();
+    redacted.mqtt.password.clear();
     return toJson(redacted);
 }
 
@@ -160,6 +175,9 @@ Result<Config> applyWebUpdate(std::string_view json, const Config& current)
     Config& updated = parsed->config;
     if (updated.wifi.password.empty()) {
         updated.wifi.password = current.wifi.password;
+    }
+    if (updated.mqtt.password.empty()) {
+        updated.mqtt.password = current.mqtt.password;
     }
     return updated;
 }

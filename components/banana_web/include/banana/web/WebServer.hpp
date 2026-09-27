@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -94,8 +93,5 @@ private:
 
     httpd_handle_t handle_ = nullptr;
 };
-
-/// For handlers after their response: gives the client time to receive it, then restarts the chip.
-[[noreturn]] void restartAfter(std::chrono::milliseconds delay);
 
 } // namespace banana::web

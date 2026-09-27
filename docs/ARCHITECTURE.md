@@ -11,15 +11,17 @@ flowchart TD
 
     web["<b>banana_web</b><br/>WebServer, HttpRequest<br/>ApiRoutes, StaticFileRoutes, OtaRoutes, EventStream<br/>OtaUpdater · WebPaths, LiveValues (host)"]
     net["<b>banana_net</b><br/>WifiManager, MdnsService, TimeSync"]
+    mqtt["<b>banana_mqtt</b><br/>MqttService (esp-mqtt)<br/>HomeAssistant (host): topics,<br/>discovery, state, commands"]
     storage["<b>banana_storage</b><br/>LittleFs, Nvs, NvsNamespace, File<br/>FileLogger, MeasurementRecorder<br/>MeasurementCsv (host)"]
     config["<b>banana_config</b><br/>Config (host), ConfigJson (host)<br/>ConfigStore (NVS)"]
     control["<b>banana_control</b> (host)<br/>ControlLoop, PidController<br/>BrewFeedForward, BrewDetector<br/>Diagnostics, StatusIndicator<br/>IHeaterControl"]
     drivers["<b>banana_drivers</b><br/>Ads1115, Ssr, RgbLed<br/>TemperatureConverter, Pt1000 (host)"]
     hal["<b>banana_hal</b><br/>GpioInput/Output, I2cBus/Device, Ledc<br/>PeriodicTimer · rtos: Task, EventGroup, Watchdog"]
     core["<b>banana_core</b> (host)<br/>Result, Flags, board pins<br/>io interfaces: ITemperatureSensor,<br/>IPwmOutput, IStatusLed, IDigitalInput, INetworkStatus"]
-    idf[["ESP-IDF v6.1<br/>drivers, FreeRTOS, esp_http_server, esp_wifi, lwIP,<br/>app_update · managed: littlefs, mdns, ArduinoJson"]]
+    idf[["ESP-IDF v6.1<br/>drivers, FreeRTOS, esp_http_server, esp_wifi, lwIP,<br/>app_update · managed: littlefs, mdns, mqtt, ArduinoJson"]]
 
-    main --> web & net & storage & config & control & drivers & hal
+    main --> web & mqtt & net & storage & config & control & drivers & hal
+    mqtt --> net & config & control & hal
     web --> net & config & control & storage
     net --> hal
     storage --> hal
@@ -27,7 +29,7 @@ flowchart TD
     control --> config & core
     drivers --> hal & config
     hal --> core
-    web & net & storage & drivers & hal --> idf
+    web & mqtt & net & storage & drivers & hal --> idf
 ```
 
 The control logic only sees the `io` interfaces (`ITemperatureSensor`, `IPwmOutput`, …), so the same
@@ -36,7 +38,7 @@ heater only through `control::IHeaterControl` (`snapshot()`, `requestConfig()`).
 
 ## Runtime: tasks, interrupts, data flow
 
-13 FreeRTOS tasks run in steady state (measured with `uxTaskGetSystemState()`; `main` ends after
+13 FreeRTOS tasks run in steady state (14 with MQTT enabled) (measured with `uxTaskGetSystemState()`; `main` ends after
 `App::run()`). Two of them are ours (**bold**); the rest belong to ESP-IDF.
 
 ```mermaid
@@ -93,6 +95,9 @@ flowchart LR
     httpd -- "/events: values + rows (SSE)" --> browser(["Browser"])
     net <--> httpd
     net -. "INetworkStatus<br/>(Wi-Fi fault = purple LED)" .-> heater
+    mqtttask["mqtt_task<br/>prio 5 (optional)"] -- "state every 5 s,<br/>discovery" --> ha(["Home Assistant"])
+    ha -- "target, standby time,<br/>restart" --> mqtttask
+    mqtttask -- "snapshot(), update() + requestConfig()" --> snap
 
     ring --> filelog
     filelog -- "logfile_recent.txt" --> flash
@@ -104,6 +109,7 @@ flowchart LR
 |-------------|------|-------------|-------------|------------------------------------------------------------------------|
 | **heater**  | 5    | 1 (pinned)  | 1756 B / 4096 | `HeaterTask`: ADC read, PID, SSR, LED, brew detection, diagnostics, `data.csv`; subscribed to the task watchdog (75 s) |
 | **filelog** | 2    | 1 (pinned)  | 1800 B / 4096 | `FileLogger`: ring buffer → `logfile_recent.txt`, rotation            |
+| mqtt_task   | 5    | any         | –           | esp-mqtt client (only with MQTT enabled): publishes queued messages, handles Home Assistant commands |
 | httpd       | 5    | any         | 7268 B / 8192 | `esp_http_server`: all web routes, OTA and file uploads, `/events` broadcast |
 | esp_timer   | 22   | 0           | 2816 B      | 450 ms tick (`PeriodicTimer`), 60 s health log, 1 s `/events` trigger  |
 | Tmr Svc     | 1    | any         | 1472 B      | FreeRTOS timer daemon: carries `EventGroup::setFromIsr()` to the event group |
@@ -127,7 +133,9 @@ pinning does not shorten the stalls of the heater task, it only avoids the overl
 - The heater task is the only task that touches the ADC, SSR and LED; everything else talks to it through the
   event group (`requestConfig()` + `ConfigChanged`) or reads the mutex-protected `ProcessSnapshot`.
 - ISRs only set event bits (IRAM), no I2C or logging.
-- `ConfigStore` has its own mutex (web saves vs. boot load); the settings are one NVS blob (atomic replace).
+- `ConfigStore` has its own mutex; web UI and MQTT change settings with `update()` (read-modify-write under
+  one lock), so they cannot overwrite each other. The settings are one NVS blob (atomic replace).
+- MQTT publishes with `esp_mqtt_client_enqueue()`: the timer task never waits on the network.
 - `EventStream`: the heater task only appends rows to a mutex-protected buffer (dropped when nobody listens);
   subscribing and sending run in the httpd task, so a slow browser never blocks the heater.
 - Every task logs through the `vprintf` hook into the ring buffer; only `filelog` writes the log file, so a

@@ -3,11 +3,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "esp_log.h"
-#include "esp_system.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
 namespace banana::web {
 namespace {
 
@@ -30,7 +25,6 @@ const char* statusLine(Status status)
     return HTTPD_500;
 }
 
-constexpr const char* kTag = "web";
 constexpr int kMaxTimeouts = 3; // x recv_wait_timeout (5 s)
 
 } // namespace
@@ -158,13 +152,6 @@ void WebServer::stop()
         httpd_stop(handle_);
         handle_ = nullptr;
     }
-}
-
-void restartAfter(std::chrono::milliseconds delay)
-{
-    ESP_LOGW(kTag, "restart in %lld ms", static_cast<long long>(delay.count()));
-    vTaskDelay(pdMS_TO_TICKS(delay.count()));
-    esp_restart();
 }
 
 } // namespace banana::web

@@ -1,15 +1,20 @@
 #include "App.hpp"
 
 #include <array>
+#include <cstdio>
 #include <ctime>
 #include <string>
 #include <utility>
 
 #include "driver/ledc.h"
+#include "esp_app_desc.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
 #include "banana/core/board.hpp"
@@ -27,6 +32,7 @@ constexpr std::chrono::seconds kWifiTimeout{18};          // connectWiFi(3, 6000
 constexpr std::chrono::seconds kTimeSyncTimeout{10};
 constexpr std::chrono::seconds kHealthPeriod{60};
 constexpr std::chrono::milliseconds kEventPeriod{1000}; // /events: live values and new data.csv rows
+constexpr std::chrono::seconds kMqttStatePeriod{5};
 // Heater task and log writer share a core: they then take turns (the heater has the higher priority), so a
 // log flash write rarely overlaps an ADS1115 read. Bench, stress build (a log line per tick), 170 s: I2C
 // NACKs 16 unpinned, 23 with the logger on core 0, 0-1 on core 1. Wi-Fi runs on core 0.
@@ -101,6 +107,17 @@ config::Config loadConfig(config::ConfigStore& store)
         ESP_LOGE(kTag, "writing the configuration to NVS failed: %s", esp_err_to_name(loaded.writeError));
     }
     return loaded.config;
+}
+
+/// "bananactrl_" + the last three bytes of the station MAC: stable and unique per board.
+std::string deviceId()
+{
+    std::array<std::uint8_t, 6> mac{};
+    esp_read_mac(mac.data(), ESP_MAC_WIFI_STA);
+    std::array<char, 24> id{};
+    std::snprintf(id.data(), id.size(), "bananactrl_%02x%02x%02x", mac[3], mac[4],
+                  mac[5]); // NOLINT(cppcoreguidelines-pro-type-vararg)
+    return id.data();
 }
 
 /// Configured network, or the factory credentials from Kconfig if none is configured.
@@ -183,6 +200,7 @@ void App::run()
 
     ESP_ERROR_CHECK(rtos::Watchdog::configure(kWatchdogTimeout, true).error_or(ESP_OK));
     ESP_ERROR_CHECK(heaterTask_.start("heater", 4096, 5, kControlCore).error_or(ESP_OK));
+    ESP_ERROR_CHECK(configStore_.addListener(heaterTask_).error_or(ESP_OK)); // settings page, MQTT, reset
 
     // Interrupt sources only after the task exists: they set its event bits.
     if (ads_) {
@@ -199,8 +217,11 @@ void App::run()
     // After the heater: the connection attempt blocks for up to kWifiTimeout.
     startNetwork();
     startWebServer();
+    startMqtt();
     // data.csv after the time sync, like the Arduino firmware (its header carries the timestamp)
     startRecording();
+    ESP_LOGI(kTag, "boot done, main task stack: %u bytes never used",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
 }
 
 void App::startRecording()
@@ -262,6 +283,24 @@ void App::startWebServer()
     ESP_LOGI(kTag, "web server running on http://%s/", wifi_.ipAddress().c_str());
     // Network and web UI are up: a new OTA image is good (otherwise the bootloader rolls back on reset)
     web::OtaUpdater::markRunningAppValid();
+}
+
+void App::startMqtt()
+{
+    // Always started: MQTT can be enabled or reconfigured later on the settings page (it listens to the
+    // store)
+    mqtt::Device device{.id = deviceId(),
+                        .version = esp_app_get_description()->version,
+                        .url = std::string{"http://"} + kHostname + ".local/"};
+    const mqtt::MqttService::Dependencies deps{
+        .store = &configStore_, .heater = &heaterTask_, .wifi = &wifi_};
+    if (auto res = mqtt_.start(config_.mqtt, std::move(device), deps, kMqttStatePeriod); !res) {
+        ESP_LOGE(kTag, "MQTT start failed: %s", esp_err_to_name(res.error()));
+        return;
+    }
+    if (auto res = configStore_.addListener(mqtt_); !res) {
+        ESP_LOGE(kTag, "MQTT config listener: %s", esp_err_to_name(res.error()));
+    }
 }
 
 void App::startNetwork()

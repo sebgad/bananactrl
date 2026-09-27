@@ -65,6 +65,18 @@ Result<void> ConfigStore::save(const Config& config)
     return saveLocked(config);
 }
 
+Result<void> ConfigStore::addListener(IConfigListener& listener)
+{
+    const std::scoped_lock lock{mutex_};
+    for (IConfigListener*& slot : listeners_) {
+        if (slot == nullptr) {
+            slot = &listener;
+            return {};
+        }
+    }
+    return fail(ESP_ERR_NO_MEM);
+}
+
 Config ConfigStore::current() const
 {
     const std::scoped_lock lock{mutex_};
@@ -90,6 +102,12 @@ Result<void> ConfigStore::saveLocked(const Config& config)
         return res;
     }
     current_ = config;
+    // Still locked: every listener sees the saves in the order they happened
+    for (IConfigListener* listener : listeners_) {
+        if (listener != nullptr) {
+            listener->onConfigChanged(config);
+        }
+    }
     return {};
 }
 

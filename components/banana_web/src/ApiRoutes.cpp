@@ -1,10 +1,12 @@
 #include "banana/web/ApiRoutes.hpp"
 
 #include <chrono>
+#include <utility>
 
 #include "esp_log.h"
 
 #include "banana/config/ConfigJson.hpp"
+#include "banana/rtos/Restart.hpp"
 #include "banana/web/LiveValues.hpp"
 
 namespace banana::web {
@@ -53,19 +55,27 @@ esp_err_t ApiRoutes::paramUpdate(HttpRequest& request)
                                                                      : Status::BadRequest,
                                 "Parameters are not updated: request not received");
     }
-    const config::Config current = store_->current();
-    auto updated = config::applyWebUpdate(*body, current);
-    if (!updated) {
+    config::Config before;
+    bool valid = true;
+    auto updated = store_->update([&](config::Config& config) {
+        before = config;
+        auto merged = config::applyWebUpdate(*body, config);
+        valid = merged.has_value();
+        if (valid) {
+            config = std::move(*merged);
+        }
+        return valid;
+    });
+    if (!valid) {
         return request.sendText(Status::BadRequest, "Parameters are not updated: invalid JSON");
     }
-    if (auto res = store_->save(*updated); !res) {
-        ESP_LOGE(kTag, "saving parameters failed: %s", esp_err_to_name(res.error()));
+    if (!updated) {
+        ESP_LOGE(kTag, "saving parameters failed: %s", esp_err_to_name(updated.error()));
         return request.sendText(Status::InternalError,
                                 "Parameters are not updated: settings storage not writable");
     }
-    heater_->requestConfig(*updated);
-    ESP_LOGI(kTag, "parameters updated");
-    if (updated->wifi != current.wifi) {
+    ESP_LOGI(kTag, "parameters updated"); // ConfigStore notifies the heater task (and MQTT)
+    if (updated->wifi != before.wifi) {
         return request.sendText(Status::Ok, "Parameters are updated and changes applied. "
                                             "Wi-Fi changes take effect after a restart.");
     }
@@ -80,7 +90,6 @@ esp_err_t ApiRoutes::paramReset(HttpRequest& request)
         return request.sendText(Status::InternalError,
                                 "Parameters are not reset: settings storage not writable");
     }
-    heater_->requestConfig(*defaults);
     ESP_LOGI(kTag, "parameters reset to defaults");
     return request.sendText(Status::Ok, "Parameters are set back to default values");
 }
@@ -89,7 +98,7 @@ esp_err_t ApiRoutes::paramReset(HttpRequest& request)
 esp_err_t ApiRoutes::restart(HttpRequest& request)
 {
     request.sendText(Status::Ok, "ESP is going to restart");
-    restartAfter(kRestartDelay);
+    rtos::restartAfter(kRestartDelay);
 }
 
 } // namespace banana::web

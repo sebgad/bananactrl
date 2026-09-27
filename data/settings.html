@@ -110,8 +110,8 @@
               obj_input.type = "checkbox";
               obj_input.checked = obj_json_req[str_section_key][str_key];
               obj_label.append(obj_input);
-            } else if (str_key === "wifiPassword"){
-              // the device never sends the password: empty keeps the stored one
+            } else if (str_key.endsWith("Password")){
+              // the device never sends passwords (Wi-Fi, MQTT): empty keeps the stored one
               obj_input.type = "password";
               obj_input.placeholder = "unchanged";
               obj_para.appendChild(obj_input);
