@@ -454,6 +454,10 @@ OTA from the web UI boots the new image.
      in 7 minutes (heat-up), so it is bench-specific (wiring). Closing it would need a logic analyser on
      SDA/SCL plus a GPIO toggled around flash writes. The retry and the core pinning stay.
    - Still open: side-by-side comparison with the Arduino firmware, 24 h soak.
+8. Deviation found on the machine: a settings update cleared the PID integrator (Arduino: `objPid.reset()` on
+   every `CONFIG_UPDATE`). With `CtrlIntFactor` 2000 s the integral needs over an hour to remove the remaining
+   offset, so every target change from Home Assistant restarted that approach. `ControlLoop::applyConfig()` now
+   resets only when gains, active terms or output limits change (host tests for both cases).
 
 ---
 

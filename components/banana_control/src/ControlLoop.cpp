@@ -17,12 +17,19 @@ ControlLoop::ControlLoop(io::ITemperatureSensor& sensor, io::IPwmOutput& heater,
 
 void ControlLoop::applyConfig(const config::Config& config)
 {
+    const PidController::Settings previous = pid_.settings();
+    const PidController::Settings next = toPidSettings(config.pid);
     pidSettings_ = config.pid;
-    pid_.configure(toPidSettings(config.pid));
+    pid_.configure(next);
     feedForward_.configure(toBrewFeedForwardSettings(config.pid));
     sensor_->setFilterActive(config.signal.filterActive);
     timeToStandby_ = config.system.timeToStandby;
-    pid_.reset();
+    // The integrator content belongs to the gains, active terms and output limits: start clean only if one of
+    // them changed. The Arduino firmware reset on every settings update, so each target or standby change
+    // (now easy from Home Assistant) restarted the slow integral approach.
+    if (next.gains != previous.gains || next.terms != previous.terms || next.limits != previous.limits) {
+        pid_.reset();
+    }
     snapshot_.target = pidSettings_.target;
 }
 

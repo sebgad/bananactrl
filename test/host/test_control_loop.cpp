@@ -297,4 +297,39 @@ TEST(ControlLoop, SnapshotTimeSinceStart)
     EXPECT_FLOAT_EQ(bench.loop.snapshot().seconds, 1.0F);
 }
 
+TEST(ControlLoop, TargetOrStandbyChangeKeepsIntegrator)
+{
+    Bench bench;
+    bench.sensor.celsius = 80.0F;
+    bench.run(10s);
+    const float integrator = bench.loop.snapshot().pidIntegrator;
+    ASSERT_GT(integrator, 0.0F);
+
+    banana::config::Config config = bench.config;
+    config.pid.target = 86.0F;
+    config.system.timeToStandby = std::chrono::seconds{7200};
+    config.led.colorGains.red = 0.5F;
+    config.mqtt.enabled = true;
+    bench.loop.applyConfig(config);
+    bench.run(1s);
+    EXPECT_GT(bench.loop.snapshot().pidIntegrator, integrator); // kept and still integrating
+}
+
+TEST(ControlLoop, GainChangeResetsIntegrator)
+{
+    Bench bench;
+    bench.sensor.celsius = 80.0F;
+    bench.run(10s);
+    const float integrator = bench.loop.snapshot().pidIntegrator;
+    ASSERT_GT(integrator, 0.0F);
+
+    banana::config::Config config = bench.config;
+    config.pid.intFactor = 700.0F; // different Ki: the old integral means something else now
+    bench.loop.applyConfig(config);
+    bench.run(1s);
+    EXPECT_LT(bench.loop.snapshot().pidIntegrator, integrator);
+    EXPECT_LE(bench.loop.snapshot().pidIntegrator,
+              5.0F * 2); // restarted from 0: at most 1 s x 5 K (x2 margin)
+}
+
 } // namespace
