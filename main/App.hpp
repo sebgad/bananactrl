@@ -25,7 +25,9 @@
 #include "banana/web/ApiRoutes.hpp"
 #include "banana/web/EventStream.hpp"
 #include "banana/web/OtaRoutes.hpp"
+#include "banana/web/ReleaseUpdater.hpp"
 #include "banana/web/StaticFileRoutes.hpp"
+#include "banana/web/UpdateRoutes.hpp"
 #include "banana/web/WebServer.hpp"
 
 #include "HeaterTask.hpp"
@@ -86,9 +88,11 @@ private:
     hal::PeriodicTimer health_;
     std::optional<net::MdnsService> mdns_;
     std::optional<net::TimeSync> timeSync_;
-    mqtt::MqttService mqtt_; ///< connects only if enabled in the settings (and in station mode)
+    mqtt::MqttService mqtt_;             ///< connects only if enabled in the settings (and in station mode)
+    web::ReleaseUpdater releaseUpdater_; ///< updates from GitHub releases, task started on first use
     web::ApiRoutes apiRoutes_;
     web::OtaRoutes otaRoutes_;
+    web::UpdateRoutes updateRoutes_;
     web::StaticFileRoutes staticRoutes_;
     web::EventStream eventStream_;
     std::optional<web::WebServer> webServer_; ///< after the routes: stopped before they are destroyed

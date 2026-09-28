@@ -17,6 +17,8 @@ const char* statusLine(Status status)
         return "403 Forbidden";
     case Status::NotFound:
         return HTTPD_404;
+    case Status::Conflict:
+        return "409 Conflict";
     case Status::ContentTooLarge:
         return "413 Content Too Large";
     case Status::InternalError:

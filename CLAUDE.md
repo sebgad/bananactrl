@@ -21,8 +21,8 @@ or recording behaviour.
 | `components/banana_control` | `ControlLoop`, `PidController`, brew detection/feed-forward, diagnostics, status indicator, `IHeaterControl` |
 | `components/banana_config` | `Config` value type, JSON mapping (`params.json`), `ConfigStore` (NVS, listeners) |
 | `components/banana_storage` | LittleFS, NVS, `File`, `FileLogger`, `MeasurementRecorder` / `MeasurementCsv` (`data.csv`) |
-| `components/banana_net` | `WifiManager` (station / SoftAP fallback), mDNS, SNTP |
-| `components/banana_web` | `WebServer`, `ApiRoutes`, `StaticFileRoutes`, `OtaRoutes`, `EventStream` (SSE `/events`), `WebPaths` (URI → file table) |
+| `components/banana_net` | `WifiManager` (station / SoftAP fallback), mDNS, SNTP, `HttpClient` (HTTPS GET) |
+| `components/banana_web` | `WebServer`, `ApiRoutes`, `StaticFileRoutes`, `OtaRoutes`, `UpdateRoutes` + `ReleaseUpdater` (install GitHub releases; `Release`, `TarReader`), `EventStream` (SSE `/events`), `WebPaths` (URI → file table) |
 | `components/banana_mqtt` | `MqttService`, `HomeAssistant` (topics, discovery, commands) |
 | `data/` | Web UI, flashed as the LittleFS image (`storage` partition); `uPlot.min.js.gz` is the bundled chart library, `footer.js` shows the firmware version |
 | `test/host/` | GoogleTest unit tests for the pure-logic sources, built with the host compiler; `shim/` (ESP-IDF header stand-ins), `fakes.hpp`, `reference/` (original Arduino PID as golden reference), `data/` (measurement tables) |
@@ -88,6 +88,12 @@ Wi-Fi credentials); after changing a defaults file, delete `sdkconfig` and rebui
 - Shared state: `std::mutex` + `std::scoped_lock`; `portMUX` spinlocks only for data shared with an ISR.
   The concurrency rules per task are in docs/ARCHITECTURE.md.
 
+## Git
+
+- **Never push** (no `git push` of branches or tags). The maintainer pushes; the GitHub SSH key is a hardware
+  security key that needs a touch/PIN anyway. Committing and creating local tags is fine when asked.
+- A pushed `v*` tag publishes a GitHub release, so a tag stays local until the maintainer pushes it.
+
 ## Things to know
 
 - **Web UI works offline** (SoftAP mode, no internet): no CDNs, all assets live in `data/`. Every new
@@ -99,7 +105,10 @@ Wi-Fi credentials); after changing a defaults file, delete `sdkconfig` and rebui
   do not rename them.
 - Live data reaches the pages through server-sent events on `/events` (`values` once per second, `rows`
   with new `data.csv` rows); pages fall back to polling.
-- `WebServer` allows 16 URI handlers (`maxUriHandlers`); check the count when adding routes.
+- `WebServer` allows 16 URI handlers (`maxUriHandlers`), 13 are used; check the count when adding routes.
+- Updates from GitHub need the release assets `bananactrl-<version>.bin`, `MD5SUMS` and (for the pages)
+  `webui-<version>.tar`; keep these names in `release.yml` and `Release.cpp` in sync. A new file in `data/`
+  reaches devices through the archive; its name must pass `isValidUploadName()`.
 - **Versioning:** no version number in the sources. `CMakeLists.txt` derives it from git tags `vX.Y.Z`
   (`git describe`), exposed via `esp_app_get_description()->version` and `/version.json`. Releases:
   update `CHANGELOG.md`, tag `vX.Y.Z`, push the tag (see README "Versioning and releases").

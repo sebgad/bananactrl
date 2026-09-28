@@ -170,8 +170,13 @@ App::App()
                   config_),
       tick_(orAbort(hal::PeriodicTimer::create("tick", &HeaterTask::onTick, &heaterTask_), "tick timer")),
       health_(orAbort(hal::PeriodicTimer::create("health", &App::logHealth, this), "health timer")),
+      releaseUpdater_({.repository = CONFIG_BANANA_UPDATE_REPOSITORY,
+                       .fsRoot = std::string{fs_.mountPoint()},
+                       .version = esp_app_get_description()->version},
+                      wifi_),
       apiRoutes_(configStore_, heaterTask_, wifi_), otaRoutes_(std::string{fs_.mountPoint()}),
-      staticRoutes_(std::string{fs_.mountPoint()}), eventStream_(heaterTask_, wifi_)
+      updateRoutes_(releaseUpdater_), staticRoutes_(std::string{fs_.mountPoint()}),
+      eventStream_(heaterTask_, wifi_)
 {
 }
 
@@ -273,7 +278,7 @@ void App::startWebServer()
         heaterTask_.attachRowListener(&eventStream_);
     }
     for (auto res : {apiRoutes_.registerOn(*server), otaRoutes_.registerOn(*server),
-                     staticRoutes_.registerOn(*server)}) {
+                     updateRoutes_.registerOn(*server), staticRoutes_.registerOn(*server)}) {
         if (!res) {
             ESP_LOGE(kTag, "web route registration failed: %s", esp_err_to_name(res.error()));
             return;

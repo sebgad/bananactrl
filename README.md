@@ -31,11 +31,28 @@ CONFIG_BANANA_WIFI_FACTORY_PW="..."
 | `idf.py -p /dev/ttyUSB0 app-flash`     | app only                                                          | kept           | kept           |
 | `idf.py -p /dev/ttyUSB0 storage-flash` | LittleFS image only (web pages)                                   | kept           | **erased**     |
 | `idf.py -p /dev/ttyUSB0 erase-flash`   | everything                                                        | **erased**     | **erased**     |
+| Web UI → OTA → Update from GitHub      | newest release: app into the other OTA slot, web pages into LittleFS | kept        | kept           |
 | Web UI → OTA → firmware                | app into the other OTA slot (MD5: `md5sum build/bananactrl.bin`)  | kept           | kept           |
 | Web UI → OTA → data file               | one file into LittleFS (e.g. an updated `index.html`)             | kept           | kept           |
 
 The settings live in NVS (namespace `banana`, same JSON as `params.json`). A `params.json` found in LittleFS
 while NVS holds no settings is imported once and renamed to `params.json.imported`.
+
+### Update from GitHub
+
+OTA page → **Check for updates** asks the GitHub API for the newest release of
+`CONFIG_BANANA_UPDATE_REPOSITORY` (default `sebgad/bananactrl`; tick **Include pre-releases** for release
+candidates). **Install** makes the controller download it itself (station mode only, the SoftAP has no
+internet):
+
+1. `MD5SUMS` of the release,
+2. `webui-<version>.tar` into hidden files in LittleFS (releases without the archive keep their pages),
+3. `bananactrl-<version>.bin` into the other OTA slot,
+4. after both MD5s and the image check passed: the pages are renamed into place and the controller restarts.
+
+A failed download leaves firmware and pages as they were. The heater keeps running during the download
+(about a minute). `params.json`, `data.csv` and the logs are never part of the archive and stay untouched.
+The API allows 60 unauthenticated requests per hour and IP address; each check uses one.
 
 After an OTA update the new firmware confirms itself once its web server runs; if it resets before that, the
 bootloader returns to the previous firmware. `/failsafe` serves an upload page built into the firmware
@@ -64,7 +81,7 @@ The settings page never shows the stored Wi-Fi password; leaving the field empty
 | `/graphs.html`       | `data.csv` of the current session, live rows via `/events` (uPlot, bundled: no internet needed) |
 | `/events`            | server-sent events once per second: `values` (as `/lastvalues.json`), `rows` (new `data.csv` rows) |
 | `/settings.html`     | parameters (`/params.json`, `/paramUpdate`, `/paramReset`, `/restartesp`) |
-| `/ota.html`          | firmware and data file upload                             |
+| `/ota.html`          | update from GitHub releases (`/update.json`, `/update`), firmware and data file upload |
 | `/log.html`          | `logfile_recent.txt` (this session), `logfile_last.txt` (previous session) |
 
 ## Status LED
@@ -158,6 +175,7 @@ Release assets:
 | File                             | Use                                                                    |
 |----------------------------------|------------------------------------------------------------------------|
 | `bananactrl-<version>.bin`       | OTA page → firmware (MD5 from `MD5SUMS`) or `app-flash`                |
+| `webui-<version>.tar`            | the files of `data/`: OTA page → Update from GitHub installs them with the firmware |
 | `storage-<version>.bin`          | LittleFS image (web pages); erases data.csv and logs                   |
 | `bananactrl-factory-<version>.bin` | everything merged, for a new board: `esptool.py write_flash 0x0 bananactrl-factory-<version>.bin` |
 | `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, `flash_args` | individual images and their offsets |

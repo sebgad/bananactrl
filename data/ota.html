@@ -42,6 +42,109 @@
 </div>
 
 <div class="main">
+  <h2>Update from GitHub</h2>
+  <div id="updateInfo">Running firmware: ...</div>
+  <label><input type="checkbox" id="prereleases"> Include pre-releases</label>
+  <button id="checkButton">Check for updates</button>
+  <button id="installButton" hidden>Install</button>
+  <progress id="updateProgress" hidden></progress>
+  <div id="updateStatus"></div>
+  <script>
+    // Firmware and web UI of the newest release; the controller downloads them itself (needs internet).
+    (function() {
+      var info = document.getElementById("updateInfo");
+      var status = document.getElementById("updateStatus");
+      var checkButton = document.getElementById("checkButton");
+      var installButton = document.getElementById("installButton");
+      var progress = document.getElementById("updateProgress");
+      var pollTimer = null;
+
+      function link(update) {
+        return update.Latest + (update.Prerelease ? " (pre-release)" : "") +
+          ' - <a href="' + update.Page + '" target="_blank" rel="noopener">release notes</a>';
+      }
+
+      function show(update) {
+        var busy = update.State === "checking" || update.State === "installing" || update.State === "restarting";
+        info.textContent = "Running firmware: " + update.Current;
+        checkButton.disabled = busy;
+        installButton.hidden = busy || !update.Latest;
+        installButton.textContent = (update.State === "uptodate" ? "Reinstall " : "Install ") + update.Latest;
+        progress.hidden = update.State !== "installing";
+        if (update.Total > 0) {
+          progress.max = update.Total;
+          progress.value = update.Done;
+        }
+        switch (update.State) {
+          case "idle": status.textContent = ""; break;
+          case "checking": status.textContent = "Checking GitHub ..."; break;
+          case "uptodate": status.innerHTML = "Up to date. Newest release: " + link(update); break;
+          case "available": status.innerHTML = "Update available: " + link(update); break;
+          case "installing":
+            status.textContent = "Installing " + update.Latest + ": " + Math.round(update.Done / 1024) + " of " +
+              Math.round(update.Total / 1024) + " kB. The coffee machine keeps heating.";
+            break;
+          case "restarting": status.textContent = "Installed. Restarting ..."; break;
+          case "failed": status.textContent = update.Error; break;
+        }
+        if (update.State === "restarting") {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          waitForRestart();
+        } else if (busy && !pollTimer) {
+          pollTimer = setInterval(poll, 1000);
+        } else if (!busy && pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function poll() {
+        fetch("/update.json").then(function(response) { return response.json(); }).then(show)
+          .catch(function() {});
+      }
+
+      // Reload once the new firmware answers
+      function waitForRestart() {
+        setTimeout(function retry() {
+          fetch("/version.json").then(function(response) {
+            if (response.ok) {
+              location.reload();
+            } else {
+              setTimeout(retry, 2000);
+            }
+          }).catch(function() { setTimeout(retry, 2000); });
+        }, 8000);
+      }
+
+      function start(request) {
+        fetch("/update", {method: "POST", headers: {"Content-Type": "application/json"},
+                          body: JSON.stringify(request)})
+          .then(function(response) {
+            return response.text().then(function(text) {
+              if (response.ok) {
+                poll();
+              } else {
+                status.textContent = text; // refused, e.g. no internet
+              }
+            });
+          })
+          .catch(function(error) { status.textContent = "Request failed: " + error; });
+      }
+
+      checkButton.onclick = function() {
+        start({Action: "check", Prereleases: document.getElementById("prereleases").checked});
+      };
+      installButton.onclick = function() {
+        if (confirm("Install " + installButton.textContent.replace(/^(Re)?[Ii]nstall /, "") +
+                    " and restart the controller?")) {
+          start({Action: "install"});
+        }
+      };
+      poll();
+    })();
+  </script>
+
   <h2>Firmware Update</h2>
   <form id="firmwareForm">
     <label>MD5 Checksum for firmware</label>

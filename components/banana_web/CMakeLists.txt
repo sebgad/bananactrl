@@ -3,11 +3,15 @@ idf_component_register(SRCS "src/ApiRoutes.cpp"
                             "src/LiveValues.cpp"
                             "src/OtaRoutes.cpp"
                             "src/OtaUpdater.cpp"
+                            "src/Release.cpp"
+                            "src/ReleaseUpdater.cpp"
                             "src/StaticFileRoutes.cpp"
+                            "src/TarReader.cpp"
+                            "src/UpdateRoutes.cpp"
                             "src/WebServer.cpp"
                        INCLUDE_DIRS "include"
                        REQUIRES app_update banana_config banana_control banana_core banana_hal banana_net banana_storage esp_http_server esp_rom
-                       PRIV_REQUIRES bblanchon__arduinojson esp_app_format esp_system freertos log)
+                       PRIV_REQUIRES bblanchon__arduinojson esp_app_format esp_system freertos heap log)
 
 # /failsafe: data/ota.html, gzip-compressed into the firmware (the page works without LittleFS)
 idf_build_get_property(python PYTHON)

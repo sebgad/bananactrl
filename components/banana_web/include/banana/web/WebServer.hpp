@@ -18,6 +18,7 @@ enum class Status : std::uint8_t {
     BadRequest,
     Forbidden,
     NotFound,
+    Conflict,
     ContentTooLarge,
     InternalError,
 };

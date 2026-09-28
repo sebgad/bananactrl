@@ -28,6 +28,8 @@ add_library(banana_logic STATIC
     ${COMPONENTS}/banana_drivers/src/Ads1115Config.cpp
     ${COMPONENTS}/banana_drivers/src/TemperatureConverters.cpp
     ${COMPONENTS}/banana_web/src/LiveValues.cpp
+    ${COMPONENTS}/banana_web/src/Release.cpp
+    ${COMPONENTS}/banana_web/src/TarReader.cpp
     ${COMPONENTS}/banana_mqtt/src/HomeAssistant.cpp)
 target_include_directories(banana_logic PUBLIC
     ${COMPONENTS}/banana_config/include
@@ -56,7 +58,9 @@ add_executable(host_tests
     test_home_assistant.cpp
     test_measurement_csv.cpp
     test_pid_controller.cpp
+    test_release.cpp
     test_status.cpp
+    test_tar_reader.cpp
     test_temperature_converters.cpp
     test_web.cpp)
 target_link_libraries(host_tests PRIVATE banana_logic arduino_reference GTest::gtest_main)

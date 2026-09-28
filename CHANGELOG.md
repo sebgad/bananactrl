@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Update from GitHub releases on the OTA page: the controller checks for the newest release (optionally
+  pre-releases) and installs firmware and web pages itself, verified against `MD5SUMS`.
+- Release asset `webui-<version>.tar` with the web pages, for these updates.
+
 ## [1.0.0-rc.1] - 2026-09-28
 
 ### Added

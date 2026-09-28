@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     container: espressif/idf:v6.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # all tags: CMakeLists.txt derives the version with `git describe`
 
@@ -32,17 +32,20 @@ jobs:
           cp build/bananactrl.bin build/storage.bin build/bootloader/bootloader.bin \
              build/partition_table/partition-table.bin build/ota_data_initial.bin \
              build/bananactrl-factory.bin build/flash_args dist/
+          # Web UI for updates from the device (the storage image would erase data.csv and the logs)
+          (cd data && tar --format=ustar --owner=0 --group=0 --numeric-owner --sort=name --mtime=@0 \
+             -cf ../dist/webui.tar -- *)
           python3 -c "import json; print(json.load(open('build/project_description.json'))['project_version'])" > dist/VERSION
-          (cd dist && md5sum *.bin > MD5SUMS)
+          (cd dist && md5sum *.bin *.tar > MD5SUMS)
           cat dist/VERSION dist/MD5SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware
           path: dist/
 
       # ArduinoJson as fetched by the component manager, for the host tests
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: managed-components
           path: managed_components/bblanchon__arduinojson/
@@ -52,9 +55,9 @@ jobs:
     runs-on: ubuntu-latest
     container: gcc:16 # the tests are C++26 (gnu++26)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: managed-components
           path: managed_components/bblanchon__arduinojson/

@@ -45,6 +45,7 @@ esp_err_t ApiRoutes::lastValues(HttpRequest& request)
     return request.send(Status::Ok, "application/json", json);
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static): member for WebServer::on()
 esp_err_t ApiRoutes::version(HttpRequest& request)
 {
     const esp_app_desc_t* app = esp_app_get_description();

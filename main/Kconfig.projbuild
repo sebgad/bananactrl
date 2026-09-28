@@ -30,4 +30,10 @@ menu "bananactrl"
         string "Factory Wi-Fi password"
         default ""
 
+    config BANANA_UPDATE_REPOSITORY
+        string "GitHub repository for updates"
+        default "sebgad/bananactrl"
+        help
+            "owner/name" of the GitHub repository whose releases the OTA page offers for installation.
+
 endmenu

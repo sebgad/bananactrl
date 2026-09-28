@@ -16,9 +16,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: firmware
           path: dist/
@@ -44,8 +44,9 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           cd dist
           for f in bananactrl bananactrl-factory storage; do mv "$f.bin" "$f-$version.bin"; done
-          md5sum *.bin > MD5SUMS
+          mv webui.tar "webui-$version.tar"
+          md5sum *.bin *.tar > MD5SUMS
           prerelease=""
           [[ "$version" == *-* ]] && prerelease="--prerelease"
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "bananactrl $version" \
-             --notes-file ../notes.md $prerelease *.bin flash_args MD5SUMS
+             --notes-file ../notes.md $prerelease *.bin *.tar flash_args MD5SUMS

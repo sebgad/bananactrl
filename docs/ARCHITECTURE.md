@@ -9,8 +9,8 @@ pure logic and run in the host unit tests (`test/host`).
 flowchart TD
     main["<b>main</b><br/>App (composition root)<br/>HeaterTask"]
 
-    web["<b>banana_web</b><br/>WebServer, HttpRequest<br/>ApiRoutes, StaticFileRoutes, OtaRoutes, EventStream<br/>OtaUpdater · WebPaths, LiveValues (host)"]
-    net["<b>banana_net</b><br/>WifiManager, MdnsService, TimeSync"]
+    web["<b>banana_web</b><br/>WebServer, HttpRequest<br/>ApiRoutes, StaticFileRoutes, OtaRoutes, UpdateRoutes, EventStream<br/>OtaUpdater, ReleaseUpdater · WebPaths, LiveValues, Release, TarReader (host)"]
+    net["<b>banana_net</b><br/>WifiManager, MdnsService, TimeSync<br/>HttpClient (HTTPS GET, redirects)"]
     mqtt["<b>banana_mqtt</b><br/>MqttService (esp-mqtt)<br/>HomeAssistant (host): topics,<br/>discovery, state, commands"]
     storage["<b>banana_storage</b><br/>LittleFs, Nvs, NvsNamespace, File<br/>FileLogger, MeasurementRecorder<br/>MeasurementCsv (host)"]
     config["<b>banana_config</b><br/>Config (host), ConfigJson (host)<br/>ConfigStore (NVS)"]
@@ -111,6 +111,7 @@ flowchart LR
 | **filelog** | 2    | 1 (pinned)  | 1800 B / 4096 | `FileLogger`: ring buffer → `logfile_recent.txt`, rotation            |
 | mqtt_task   | 5    | any         | –           | esp-mqtt client (only with MQTT enabled): publishes queued messages, handles Home Assistant commands |
 | httpd       | 5    | any         | 7268 B / 8192 | `esp_http_server`: all web routes, OTA and file uploads, `/events` broadcast |
+| update      | 3    | any         | – / 8192    | `ReleaseUpdater`: GitHub release check and installation; created on the first check, then waits |
 | esp_timer   | 22   | 0           | 2816 B      | 450 ms tick (`PeriodicTimer`), 60 s health log, 1 s `/events` trigger  |
 | Tmr Svc     | 1    | any         | 1472 B      | FreeRTOS timer daemon: carries `EventGroup::setFromIsr()` to the event group |
 | sys_evt     | 20   | 0           | 1492 B      | default event loop: `WifiManager::onEvent()` (connect, reconnect, got IP) |
@@ -140,7 +141,9 @@ pinning does not shorten the stalls of the heater task, it only avoids the overl
   subscribing and sending run in the httpd task, so a slow browser never blocks the heater.
 - Every task logs through the `vprintf` hook into the ring buffer; only `filelog` writes the log file, so a
   slow flash write never blocks the logging task (full buffer → dropped lines, counted).
-- Flash writes from a task on the other core (httpd: settings, uploads, OTA) can still overlap an ADS1115
+- `ReleaseUpdater`: httpd only queues a job and reads the status (mutex); the download and all flash
+  writes of an update from GitHub run in the `update` task.
+- Flash writes from a task on the other core (httpd: settings, uploads, OTA; update) can still overlap an ADS1115
   read; the driver retries the read once (see [I2C NACKs during flash writes](#i2c-nacks-during-flash-writes)).
 
 ## Differences from the Arduino firmware
@@ -186,6 +189,8 @@ format are unchanged. These differences are deliberate; do not "restore" the old
 - OTA uploads send the raw body with `X-MD5` / `X-Filename` headers (no multipart parser in
   `esp_http_server`); the MD5 stays mandatory. New images must confirm themselves
   (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), otherwise the bootloader rolls back.
+- New: the controller installs GitHub releases itself (firmware plus `webui-<version>.tar` with the files
+  of `data/`), verified against the release's `MD5SUMS`.
 - Dropped: the PID gain-schedule table (`changePidCoeffs`). The firmware never used it, it read past the end
   of its table and mixed up gain and time-constant units.
 
