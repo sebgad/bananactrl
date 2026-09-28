@@ -59,7 +59,7 @@ private:
     void startRecording();
     void startWebServer();
     void startMqtt();
-    /// Once a minute: heap and logger statistics (soak test, Phase 8).
+    /// Once a minute: heap and logger statistics (for soak tests).
     static void logHealth(void* arg);
 
     storage::Nvs nvs_;

@@ -141,4 +141,87 @@ pinning does not shorten the stalls of the heater task, it only avoids the overl
 - Every task logs through the `vprintf` hook into the ring buffer; only `filelog` writes the log file, so a
   slow flash write never blocks the logging task (full buffer → dropped lines, counted).
 - Flash writes from a task on the other core (httpd: settings, uploads, OTA) can still overlap an ADS1115
-  read; the driver retries the read once (see MIGRATION.md, Phase 7 bench finding).
+  read; the driver retries the read once (see [I2C NACKs during flash writes](#i2c-nacks-during-flash-writes)).
+
+## Differences from the Arduino firmware
+
+The firmware is a port of the Arduino firmware `coffee_ctrl_main` (Arduino-ESP32 core 2.x). Web UI,
+`params.json` keys (including the misspelt `HighTresholdValue`), `/lastvalues.json` keys and the `data.csv`
+format are unchanged. These differences are deliberate; do not "restore" the old behaviour.
+
+**Safety and control**
+- A blocking fault (temperature < 10 °C, ADC not answering or not in continuous mode) or standby switches the
+  heater off at once. The Arduino firmware wrote the SSR only in the PID step, which the ADC's ready pulse
+  triggers, so a dead ADC left the last duty on the heater. No conversion for 1 s counts as an ADC fault.
+- A Wi-Fi fault only turns the LED purple (`control::blocksHeating()`); the Arduino firmware stopped heating
+  on any fault.
+- A settings change resets the PID integrator only when gains, active terms or output limits change (the
+  Arduino firmware reset it on every update). With `CtrlIntFactor` 2000 s the integral needs over an hour to
+  remove the remaining offset, so every target change from Home Assistant restarted that approach.
+- Kept on purpose: standby counts from boot, not from the last use, and lasts until reboot.
+- Fault flags are `Flags<Fault>`: the Arduino check `iErrorId == WIFI_DISCONNECT` could never be true because
+  `NO_ERROR` was itself a bit. Fault, brewing and standby changes are logged once, not every 0.9 s.
+
+**Settings**
+- Stored as one JSON blob in NVS (`banana`/`params`), atomically replaced; survives `idf.py flash` and
+  `storage-flash`. An old `params.json` in LittleFS is imported once and renamed `.imported`.
+- Missing keys keep their value, both when loading (defaults) and on `/paramUpdate` (current values). The
+  Arduino firmware set missing keys to 0 on update and replaced stored `false`/`0` by the defaults on every boot.
+- The Wi-Fi password never leaves the device: `/params.json` is generated with an empty password, and an empty
+  password in `/paramUpdate` keeps the stored one. Consequence: once a password is stored, an open network
+  cannot be set through the web UI. Empty SSID = factory credentials from Kconfig (not written into the settings).
+- Wi-Fi changes take effect after a restart (as before).
+
+**Recording, network, web**
+- `data.csv` is synced every 10 rows (4.5 s) instead of closed after every row: each sync of a partly filled
+  LittleFS block costs 43–49 ms (up to 320 ms during metadata compaction) in the heater task. Trade-off:
+  switching the machine off loses up to 4.5 s of the recording. The timestamp line reads `unknown` without
+  NTP (the Arduino firmware wrote an uninitialised buffer).
+- The heater starts before Wi-Fi (the Arduino `setup()` blocked up to 18 s in `connectWiFi()` first).
+  After a successful join the station reconnects on every disconnect; the RSSI is measured live.
+- Time zone `CET-1CEST,M3.5.0,M10.5.0/3` (the fixed +3600/+3600 offsets were wrong in winter).
+- Pages get live data by server-sent events (`/events`) instead of polling; `graphs.html` no longer downloads
+  the whole `data.csv` every 3 s. Charts use the bundled uPlot (Google Charts may not be self-hosted), so no
+  page needs internet.
+- OTA uploads send the raw body with `X-MD5` / `X-Filename` headers (no multipart parser in
+  `esp_http_server`); the MD5 stays mandatory. New images must confirm themselves
+  (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`), otherwise the bootloader rolls back.
+- Dropped: the PID gain-schedule table (`changePidCoeffs`). The firmware never used it, it read past the end
+  of its table and mixed up gain and time-constant units.
+
+## Hardware and bench notes
+
+### Pt1000 conversion
+
+The Kconfig choice `BANANA_PT1000_*` selects the converter (default: 5.0 V lookup table). Host tests against
+`PT_1000_tabelle.csv` showed:
+- the Arduino "3.3 V" lookup table matches a **5.08 V** bridge supply;
+- the linear/quadratic coefficients are fits for a **3.3 V** bridge (worst case 10.8 K / 1.03 K) and are about
+  50 K off on the 5 V hardware.
+
+### ADS1115
+
+- An ADS1115 that answers on I2C but resets to its power-on defaults as soon as it converts has no proper
+  VDD/GND (it is powered through the I2C pull-ups).
+- A module that delivers **~128 conversions/s at "8 SPS"** carries a 12-bit ADS1015, not an ADS1115.
+- The configuration register value is `0x880C` (as the Arduino `configADS1115()`); the read-back check ignores
+  the OS bit, which reads 0 in continuous mode.
+
+### I2C NACKs during flash writes
+
+An ADS1115 conversion read occasionally ends in a NACK ("I2C bus is still busy but software timeout
+detected") when a flash write from a task on the *other* core overlaps it. Without `data.csv` recording or
+without the FileLogger writing there are no errors; `CONFIG_I2C_ISR_IRAM_SAFE` and a 500 ms I2C timeout made
+no difference. The root cause inside the ESP32/IDF I2C path is not known; finding it would need a logic
+analyser on SDA/SCL plus a GPIO toggled around flash writes.
+
+Mitigations, both staying: `Ads1115::readRegister()` retries once (stress build: 109 retries in 150 s, none
+failed twice), and `heater` + `filelog` share core 1 (see [Task list](#task-list)). On the machine board:
+0 NACKs in 7 minutes of heat-up, so the rate seen on the bench is probably wiring-related. The driver's
+`E i2c.master` lines can still appear in the log.
+
+## Open validation
+
+- Side-by-side `data.csv` of the Arduino and this firmware for one heat-up and one shot, including the Pt1000
+  comparison and LED colours.
+- Soak test ≥ 24 h (`health:` log line every 60 s; bench 5 min: heap constant, 0 log drops).
