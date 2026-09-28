@@ -7,6 +7,7 @@
   <title>BananaCoffee</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3a2a1d">
 
   <!-- Java script for graphs.html -->
   <script type="text/javascript">
@@ -79,14 +80,17 @@
 
       // iterate over json object and create text inputs
       for(var str_section_key in obj_json_req){
-        var obj_heading = document.getElementById(str_section_key);
+        var obj_section = document.getElementById(str_section_key);
 
-        if(!obj_heading){
-          // add heading if not exists already
-          obj_heading = document.createElement("h3");
-          obj_heading.innerHTML = str_section_key;
-          obj_heading.id = str_section_key;
-          obj_form.appendChild(obj_heading);
+        if(!obj_section){
+          // add a card with heading per section if not exists already
+          obj_section = document.createElement("div");
+          obj_section.className = "card";
+          obj_section.id = str_section_key;
+          var obj_heading = document.createElement("h3");
+          obj_heading.textContent = str_section_key;
+          obj_section.appendChild(obj_heading);
+          obj_form.appendChild(obj_section);
         }
 
         for(var str_key in obj_json_req[str_section_key]){
@@ -123,8 +127,8 @@
             obj_input.value=obj_json_req[str_section_key][str_key];
             obj_input.id=str_section_key + "_" + str_key;
 
-            // append paragraph to form
-            obj_form.appendChild(obj_para);
+            // append paragraph to the section card
+            obj_section.appendChild(obj_para);
           } else {
             obj_input.value=obj_json_req[str_section_key][str_key];
           }
@@ -228,88 +232,43 @@ function onRequestRestart(){
   </script>
 </head>
 <body onload="onGetParameter()">
-  <style>
-    input[type=text] {
-      width: auto;
-      padding: 6px 10px;
-      margin: 4px 0;
-      box-sizing: border-box;
-      border: 2px solid #ccc;
-      -webkit-transition: 0.2s;
-      transition: 0.2s;
-      outline: none;
-      border-radius: 4px;
-    }
+<header class="topbar">
+  <a class="brand" href="/"><img src="favicon-32x32.png" alt="">BananaCoffee</a>
+  <nav class="navbar">
+    <a href="/">Home</a>
+    <a href="graphs.html">Graphs</a>
+    <a href="settings.html" class="active">Settings</a>
+    <a href="ota.html">Update</a>
+    <a href="log.html">Log</a>
+  </nav>
+</header>
 
-    input[type=text]:focus {
-      border: 3px solid #555;
-    }
-
-    input[type=button], input[type=submit], input[type=reset] {
-      background-color: #4CAF50;
-      border: none;
-      color: white;
-      padding: 8px 16px;
-      text-decoration: none;
-      margin: 4px 2px;
-      cursor: pointer;
-      border-radius: 4px;
-      font-size:medium;
-      overflow: hidden;
-      cursor: pointer;
-    }
-
-    input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
-      background: #009e00;
-    }
-
-    form label {
-      display: block;
-      font-size: 0.8em;
-      color: darkslategrey;
-      padding-left: 3px;
-    }
-
-  </style>
-<div class="header">
-  <h1>BananaCoffee</h1>
-  A simple <b>web interface</b> to control Rancilio Silvia espresso machine.
-</div>
-
-<div class="navbar">
-  <a href="/">Home</a>
-  <a href="graphs.html">Graphs</a>
-  <a href="settings.html" class="active">Settings</a>
-  <a href="ota.html">OTA</a>
-  <a href="log.html">Debug Log</a>
-  <a href="#" class="right">About</a>
-</div>
-
-<div class="main">
-  </p>
-    <h2>Parameter setup for Coffee Control</h3>
-    <form>
-      <div id="id_input"></div>
-      <p>
-        <input type="button" onclick="onSubmitParams()" value="Submit">
-        <input type="button" onclick="onResetParameter()" value="Reset">
-      </p>
-      <p>
-        <input type="button" onclick="document.getElementById('ConfigUpload').click();" value="Upload config">
+<main class="main">
+  <form>
+    <div class="page-head">
+      <h2>Settings</h2>
+      <div class="actions">
+        <input type="button" onclick="onSubmitParams()" value="Save">
+        <input type="button" class="secondary" onclick="onResetParameter()" value="Reset to defaults">
+      </div>
+    </div>
+    <div id="id_input"></div>
+    <div class="card" style="margin-top: 16px">
+      <h3>Configuration file and device</h3>
+      <div class="actions">
+        <input type="button" class="secondary" onclick="document.getElementById('ConfigUpload').click();" value="Upload config">
         <input type="file" id="ConfigUpload" accept=".json" style="display:none;" onchange="onFileUpload(this.files)">
-        <input type="button" onclick="onFileDownload()" value="Download config">
-      </p>
-      <p>
-        <input type="button" onclick="onRequestRestart()" value="Restart ESP32">
-      </p>
-      </p>
-    </form>
-</div>
+        <input type="button" class="secondary" onclick="onFileDownload()" value="Download config">
+        <input type="button" class="danger" onclick="onRequestRestart()" value="Restart ESP32">
+      </div>
+    </div>
+  </form>
+</main>
 
-<div class="footer">
-  <h5 id="version">BananaCoffee</h5>
+<footer class="footer">
+  <span id="version">BananaCoffee</span>
   <script src="footer.js"></script>
-</div>
+</footer>
 
 </body>
 </html>

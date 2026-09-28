@@ -7,48 +7,34 @@
   <title>BananaCoffee</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3a2a1d">
 </head>
 <body>
-  <style>
-    p {
-      display: flex;
-      justify-content: left;
-      align-items: center;
-    }
+<header class="topbar">
+  <a class="brand" href="/"><img src="favicon-32x32.png" alt="">BananaCoffee</a>
+  <nav class="navbar">
+    <a href="/">Home</a>
+    <a href="graphs.html">Graphs</a>
+    <a href="settings.html">Settings</a>
+    <a href="ota.html" class="active">Update</a>
+    <a href="log.html">Log</a>
+  </nav>
+</header>
 
-    p > span {
-      display: inline-block;
-      width: 20px;
-    }
-
-    p > span:first-child {
-      display: inline-block;
-      width: 200px;
-    }
-    </style>
-
-<div class="header">
-  <h1>BananaCoffee</h1>
-  A simple <b>web interface</b> to control Rancilio Silvia espresso machine.
-</div>
-
-<div class="navbar">
-  <a href="/">Home</a>
-  <a href="graphs.html">Graphs</a>
-  <a href="settings.html">Settings</a>
-  <a href="ota.html" class="active">OTA</a>
-  <a href="log.html">Debug Log</a>
-  <a href="#" class="right">About</a>
-</div>
-
-<div class="main">
-  <h2>Update from GitHub</h2>
-  <div id="updateInfo">Running firmware: ...</div>
-  <label><input type="checkbox" id="prereleases"> Include pre-releases</label>
-  <button id="checkButton">Check for updates</button>
-  <button id="installButton" hidden>Install</button>
+<main class="main">
+  <div class="page-head">
+    <h2>Update</h2>
+  </div>
+  <div class="card">
+  <h3>Update from GitHub</h3>
+  <div id="updateInfo" class="subtle">Running firmware: ...</div>
+  <div class="actions">
+    <button id="checkButton">Check for updates</button>
+    <button id="installButton" hidden>Install</button>
+    <label class="check"><input type="checkbox" id="prereleases"> Include pre-releases</label>
+  </div>
   <progress id="updateProgress" hidden></progress>
-  <div id="updateStatus"></div>
+  <div id="updateStatus" class="status"></div>
   <script>
     // Firmware and web UI of the newest release; the controller downloads them itself (needs internet).
     (function() {
@@ -144,20 +130,25 @@
       poll();
     })();
   </script>
+  </div>
 
-  <h2>Firmware Update</h2>
-  <form id="firmwareForm">
-    <label>MD5 Checksum for firmware</label>
-    <input type="text" name="MD5" id="MD5">
+  <div class="card">
+  <h3>Firmware upload</h3>
+  <form id="firmwareForm" class="form-grid">
     <input type="file" id="firmwareFile" accept=".bin">
-    <input type="submit" name="upload" value="Upload" title="Upload Firmware">
+    <label for="MD5">MD5 checksum of the firmware</label>
+    <input type="text" name="MD5" id="MD5">
+    <div><input type="submit" name="upload" value="Upload firmware" title="Upload Firmware"></div>
   </form>
-  <h2>Data file Update</h2>
-  <form id="dataForm">
+  </div>
+
+  <div class="card">
+  <h3>Web UI file upload</h3>
+  <form id="dataForm" class="form-grid">
     <input type="file" id="dataFile">
-    <input type="submit" name="upload" value="Upload" title="Upload File">
+    <div><input type="submit" name="upload" value="Upload file" title="Upload File"></div>
   </form>
-  <p id="uploadStatus"></p>
+  <p id="uploadStatus" class="status"></p>
   <script>
     // The file is sent as the raw request body (the ESP-IDF web server has no multipart parser).
     function upload(url, file, headers) {
@@ -185,12 +176,13 @@
       upload("/ota_spiffs", file, file ? {"X-Filename": file.name} : {});
     };
   </script>
-</div>
+  </div>
+</main>
 
-<div class="footer">
-  <h5 id="version">BananaCoffee</h5>
+<footer class="footer">
+  <span id="version">BananaCoffee</span>
   <script src="footer.js"></script>
-</div>
+</footer>
 
 </body>
 </html>

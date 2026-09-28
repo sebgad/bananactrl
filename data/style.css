@@ -1,150 +1,488 @@
-/* Style the body */
+/* BananaCoffee web UI: muted banana on espresso, light and dark via prefers-color-scheme */
+:root {
+  --bg: #f6f2e8;
+  --surface: #ffffff;
+  --surface-2: #f0eadc;
+  --border: #e4dcc8;
+  --text: #2b2419;
+  --muted: #7b705c;
+  --banana: #deb23a;
+  --banana-strong: #c79b22;
+  --banana-soft: rgba(222, 178, 58, 0.18);
+  --on-banana: #2b2112;
+  --espresso: #3a2a1d;
+  --on-espresso: #efe6d4;
+  --grid: #ece5d6;
+  --ok: #2f9e5b;
+  --danger: #d0493f;
+  --cold: #3d7fe0;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(58, 42, 29, 0.06), 0 4px 16px rgba(58, 42, 29, 0.06);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16120d;
+    --surface: #211b14;
+    --surface-2: #2a231a;
+    --border: #3a3126;
+    --text: #f0e9da;
+    --muted: #a69b86;
+    --banana: #d6aa33;
+    --banana-strong: #e6bd4c;
+    --banana-soft: rgba(214, 170, 51, 0.16);
+    --espresso: #0f0c08;
+    --grid: #2e271e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 body {
-  font-family: sans-serif, Arial, Helvetica;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  accent-color: var(--banana);
+}
+
+h1, h2, h3 {
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+
+h2 {
+  font-size: 22px;
+}
+
+h3 {
+  font-size: 16px;
+}
+
+a {
+  color: var(--banana-strong);
+}
+
+/* Top bar: brand and navigation, sticky */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 24px;
+  background: var(--espresso);
+  color: var(--on-espresso);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.2px;
+  color: var(--banana);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand img {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+
+.navbar {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.navbar a {
+  padding: 7px 14px;
+  border-radius: 999px;
+  color: var(--on-espresso);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.navbar a:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.navbar a.active {
+  background: var(--banana);
+  color: var(--on-banana);
+  font-weight: 600;
+}
+
+/* Page content */
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.page-head h2 {
   margin: 0;
 }
 
-/* Header/logo Title */
-.header {
-  padding: 80px;
-  text-align: center;
-  background: #1abc9c;
-  color: white;
-}
-
-/* Increase the font size of the heading */
-.header h1 {
-  font-size: 40px;
-}
-
-/* Sticky navbar - toggles between relative and fixed, depending on the scroll position. It is positioned relative until a given offset position is met in the viewport - then it "sticks" in place (like position:fixed). The sticky value is not supported in IE or Edge 15 and earlier versions. However, for these versions the navbar will inherit default position */
-.navbar {
-  overflow: hidden;
-  background-color: #333;
-  position: sticky;
-  position: -webkit-sticky;
-  top: 0;
-}
-
-/* Style the navigation bar links */
-.navbar a {
-  float: left;
-  display: block;
-  color: white;
-  text-align: center;
-  padding: 14px 20px;
-  text-decoration: none;
-}
-
-/* Right-aligned link */
-.navbar a.right {
-  float: right;
-}
-
-/* Change color on hover */
-.navbar a:hover {
-  background-color: #ddd;
-  color: black;
-}
-
-.dropdown {
-  position: relative;
-  display: inline-block;
-}
-
-/* Active/current link */
-.navbar a.active {
-  background-color: #666;
-  color: white;
-}
-
-/* Column container */
-.row {  
-  display: -ms-flexbox; /* IE10 */
+.head-group {
   display: flex;
-  -ms-flex-wrap: wrap; /* IE10 */
   flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
-/* Main column */
-.main {   
-  -ms-flex: 70%; /* IE10 */
-  flex: 70%;
-  background-color: white;
-  padding: 20px;
+.subtle {
+  color: var(--muted);
+  font-size: 13px;
 }
 
-@-webkit-keyframes pulse-animation {
-  0% { -webkit-transform: scale(1); }
-  25% { -webkit-transform: scale(1); }
-  50% { -webkit-transform: scale(1.2); }
-  75% { -webkit-transform: scale(1); }
-  100% { -webkit-transform: scale(1); }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  min-width: 0;
 }
 
-.indicator {
-  display: inline-block;
-  width:2em;
-  height: 2em;
-  border-radius: 50%;
+.card > h3 {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
 
-.indicator.on {
-  background: #28B62C;
-  -webkit-animation: pulse-animation 2s infinite linear;
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
 }
 
-.indicator.off {
-  background: #d6d6d6;
+/* Buttons */
+button, input[type=button], input[type=submit], input[type=reset] {
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--banana);
+  color: var(--on-banana);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
 }
 
-.container{
+button:hover, input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
+  background: var(--banana-strong);
+}
+
+button:active, input[type=button]:active, input[type=submit]:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.secondary, input.secondary {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+button.secondary:hover, input.secondary:hover {
+  border-color: var(--banana);
+  background: var(--banana-soft);
+}
+
+button.danger, input.danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+button.danger:hover, input.danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Inputs */
+input[type=text], input[type=password], input[type=file] {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 7px 11px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  max-width: 100%;
+}
+
+input[type=text]:focus, input[type=password]:focus {
+  border-color: var(--banana);
+  box-shadow: 0 0 0 3px var(--banana-soft);
+}
+
+input[type=checkbox] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  vertical-align: middle;
+}
+
+input[type=file]::file-selector-button {
+  font: inherit;
+  margin-right: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--banana);
+}
+
+/* Segmented control (dashboard time window) */
+.range {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.range button {
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: 9px;
+}
+
+.range button:hover {
+  background: var(--banana-soft);
+  color: var(--text);
+}
+
+.range button.active {
+  background: var(--banana);
+  color: var(--on-banana);
+}
+
+/* Dashboard widgets */
+#widgets {
   display: grid;
-  grid-template-columns: 20% 20%; 
-  /*grid-template-rows: 150px;*/
-  grid-column-gap: 5px;
-  vertical-align:middle;
-  /*text-align:center;*/
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
 }
 
-.item{
-  background: white;
-  vertical-align:middle;
-  text-align: center;
+.widget {
+  margin: 0;
+}
+
+.widget-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.widget-value {
+  font-size: 34px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 0;
+}
+
+.widget-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.widget-plot {
+  width: 100%;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pill b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Settings: one card per section, label left, input right */
+#id_input {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+#id_input .card {
+  margin: 0;
+}
+
+#id_input p {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+#id_input h3 + p {
+  border-top: none;
+}
+
+#id_input label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+#id_input label:has(input[type=checkbox]) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+#id_input input[type=text], #id_input input[type=password] {
+  width: 48%;
+  flex: none;
+}
+
+/* Log output */
+.log {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* OTA forms */
+.form-grid {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.form-grid label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.status {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.status:empty {
+  display: none;
+}
+
+/* uPlot: legend and title follow the theme */
+.uplot {
+  font-family: inherit;
+  color: var(--text);
+}
+
+.uplot .u-title {
+  font-size: 15px;
+  font-weight: 600;
 }
 
 /* Footer */
 .footer {
-  padding: 20px;
+  padding: 16px;
   text-align: center;
-  background: #ddd;
+  color: var(--muted);
+  font-size: 13px;
+  border-top: 1px solid var(--border);
 }
 
-.content {
-    width: 300px;
-    /*border: 4px solid red;*/
-    background:#ededed;
-    padding: 10px;
-    overflow: hidden;
-}
-
-ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* Responsive layout - when the screen is less than 700px wide, make the two columns stack on top of each other instead of next to each other */
-@media screen and (max-width: 700px) {
-  .row {   
+@media (max-width: 700px) {
+  .topbar {
     flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
   }
-}
 
-/* Responsive layout - when the screen is less than 300px wide, make the navigation links stack on top of each other instead of next to each other */
-@media screen and (max-width: 300px) {
-  .navbar a {
-    float: none;
-    width: 100%;
+  .main {
+    padding: 16px 12px;
+  }
+
+  #id_input {
+    grid-template-columns: 1fr;
+  }
+
+  .widget-value {
+    font-size: 30px;
   }
 }

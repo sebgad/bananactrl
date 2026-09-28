@@ -7,6 +7,7 @@
   <title>BananaCoffee</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3a2a1d">
 
   <!-- uPlot, bundled in LittleFS (third_party/uplot): works without internet -->
   <link rel="stylesheet" href="uPlot.min.css">
@@ -41,24 +42,26 @@
 
     function chartSize() {
       const div = document.getElementById("chart_div");
-      return {width: div.clientWidth, height: 600};
+      return {width: div.clientWidth, height: Math.min(600, Math.max(320, window.innerHeight - 260))};
     }
 
     function createPlot() {
+      const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const axis = {stroke: css("--muted"), grid: {stroke: css("--grid")}, ticks: {stroke: css("--grid")}};
       const options = {
         title: "Temperature and Target PWM",
         ...chartSize(),
         scales: {x: {time: false}, temp: {range: [0, 100]}, pwm: {range: [0, 100]}},
         axes: [
-          {label: "Time (s)"},
-          {scale: "temp", label: "Temperature (\u00b0C)"},
-          {scale: "pwm", label: "Target PWM (%)", side: 1, grid: {show: false}},
+          {...axis, label: "Time (s)"},
+          {...axis, scale: "temp", label: "Temperature (\u00b0C)"},
+          {...axis, scale: "pwm", label: "Target PWM (%)", side: 1, grid: {show: false}},
         ],
         series: [
           {label: "Time (s)"},
-          {label: "Temperature", scale: "temp", stroke: "#3366cc", width: 2, value: (u, v) => v == null ? "-" : v.toFixed(2)},
-          {label: "TargetPWM", scale: "pwm", stroke: "#dc3912", width: 1, value: (u, v) => v == null ? "-" : v.toFixed(1)},
-          {label: "TargetTemperature", scale: "temp", stroke: "black", dash: [8, 8], width: 1},
+          {label: "Temperature", scale: "temp", stroke: css("--banana"), width: 2, value: (u, v) => v == null ? "-" : v.toFixed(2)},
+          {label: "TargetPWM", scale: "pwm", stroke: "#cf5c36", width: 1, value: (u, v) => v == null ? "-" : v.toFixed(1)},
+          {label: "TargetTemperature", scale: "temp", stroke: css("--muted"), dash: [8, 8], width: 1},
         ],
       };
       plot = new uPlot(options, series, document.getElementById("chart_div"));
@@ -134,82 +137,31 @@
   </script>
 </head>
 <body>
-  <style>
-    p {
-      display: flex;
-      justify-content: left;
-      align-items: center;
-    }
+<header class="topbar">
+  <a class="brand" href="/"><img src="favicon-32x32.png" alt="">BananaCoffee</a>
+  <nav class="navbar">
+    <a href="/">Home</a>
+    <a href="graphs.html" class="active">Graphs</a>
+    <a href="settings.html">Settings</a>
+    <a href="ota.html">Update</a>
+    <a href="log.html">Log</a>
+  </nav>
+</header>
 
-    p > span {
-      display: inline-block;
-      width: 20px;
-    }
+<main class="main">
+  <div class="page-head">
+    <h2>Sensor Graphs</h2>
+    <button class="secondary" onclick="onFileDownload()">Download data.csv</button>
+  </div>
+  <div class="card">
+    <div id="chart_div"></div>
+  </div>
+</main>
 
-    p > span:first-child {
-      display: inline-block;
-      width: 200px;
-    }
-
-    input[type=text] {
-      width: 50%;
-      padding: 12px 20px;
-      margin: 8px 0;
-      box-sizing: border-box;
-      border: 3px solid #ccc;
-      -webkit-transition: 0.5s;
-      transition: 0.5s;
-      outline: none;
-    }
-
-    input[type=text]:focus {
-      border: 3px solid #555;
-    }
-
-    input[type=button], input[type=submit], input[type=reset] {
-      background-color: #4CAF50;
-      border: none;
-      color: white;
-      padding: 16px 32px;
-      text-decoration: none;
-      margin: 4px 2px;
-      cursor: pointer;
-      border-radius: 4px;
-      font-size:medium;
-      overflow: hidden;
-      cursor: pointer;
-    }
-
-    input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
-      background: #009e00;
-    }
-  </style>
-<div class="header">
-  <h1>BananaCoffee</h1>
-  A simple <b>web interface</b> to control Rancilio Silvia espresso machine.
-</div>
-
-<div class="navbar">
-  <a href="/">Home</a>
-  <a href="graphs.html" class="active">Graphs</a>
-  <a href="settings.html">Settings</a>
-  <a href="ota.html">OTA</a>
-  <a href="log.html">Debug Log</a>
-  <a href="#" class="right">About</a>
-</div>
-
-<div class="main">
-  <h3>Sensor Graphs</h3>
-  <div id="chart_div" style="width:95%;"></div>
-  <form>
-  <input type="button" onclick="onFileDownload()" value="Download Measurement">
-  </form>
-</div>
-
-<div class="footer">
-  <h5 id="version">BananaCoffee</h5>
+<footer class="footer">
+  <span id="version">BananaCoffee</span>
   <script src="footer.js"></script>
-</div>
+</footer>
 
 </body>
 </html>

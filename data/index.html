@@ -7,6 +7,7 @@
   <title>BananaCoffee</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3a2a1d">
 
   <!-- uPlot, bundled in LittleFS (third_party/uplot): works without internet -->
   <link rel="stylesheet" href="uPlot.min.css">
@@ -15,8 +16,10 @@
   <script type="text/javascript">
   // Dashboard widgets: one tile per value with the live reading and a uPlot trend of the last minutes.
   // Temperature, heater and target are seeded from data.csv, then everything follows the `values` event.
-  const COLOURS = {below: "#f1c40f", onTarget: "#27ae60", above: "#e74c3c", temp: "#3366cc", pwm: "#dc3912",
-                   pid: "#8e44ad", wifi: "#1abc9c"};
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const COLOURS = {below: css("--cold"), onTarget: css("--ok"), above: css("--danger"), temp: css("--banana"),
+                   pwm: "#cf5c36", pid: "#9a6fd0", wifi: "#3aa99f", grid: css("--grid"), axis: css("--muted"),
+                   target: css("--muted")};
   let windowSeconds = 300;
   const TICK_STEPS = {120: 30, 300: 60, 900: 300, 3600: 900}; // x grid per window (buttons below)
   const widgets = {};
@@ -52,7 +55,7 @@
   // Tile with title, big value, sub line and a uPlot trend. series: [{label, stroke, fill, dash}], y range [min, max]
   function createWidget(parent, {title, unit, digits, series, range, band}) {
     const tile = document.createElement("div");
-    tile.className = "widget";
+    tile.className = "card widget";
     tile.innerHTML = "<div class='widget-title'>" + title + "</div><div class='widget-value'>-</div>" +
                      "<div class='widget-sub'>&nbsp;</div><div class='widget-plot'></div>";
     parent.appendChild(tile);
@@ -86,7 +89,8 @@
         }},
       },
       axes: [
-        {size: 22, font: "10px sans-serif", grid: {stroke: "#eee"}, ticks: {show: false},
+        {size: 22, font: "10px system-ui, sans-serif", stroke: COLOURS.axis, grid: {stroke: COLOURS.grid},
+         ticks: {show: false},
          splits: u => { // counted back from the newest sample: "-4m" ... "now"
            const max = u.scales.x.max, step = TICK_STEPS[windowSeconds], splits = [];
            for (let t = max - windowSeconds; t <= max + 0.001; t += step) splits.push(t);
@@ -96,11 +100,12 @@
            const age = Math.round(u.scales.x.max - t);
            return age === 0 ? "now" : age < 60 ? "-" + age + "s" : "-" + Math.round(age / 6) / 10 + "m";
          })},
-        {size: 34, space: 25, font: "10px sans-serif", grid: {stroke: "#eee"}, ticks: {show: false}},
+        {size: 34, space: 25, font: "10px system-ui, sans-serif", stroke: COLOURS.axis,
+         grid: {stroke: COLOURS.grid}, ticks: {show: false}},
       ],
       series: [{}, ...series.map(s => ({width: 2, points: {show: false}, ...s}))],
       hooks: {
-        drawClear: band ? [bandHook(band, "rgba(39, 174, 96, 0.15)")] : [],
+        drawClear: band ? [bandHook(band, "rgba(47, 158, 91, 0.15)")] : [],
         setCursor: [showCursor],
       },
     }, history.data, plotEl);
@@ -135,12 +140,12 @@
     const grid = document.getElementById("widgets");
     widgets.temp = createWidget(grid, {
       title: "Temperature", unit: "°C", digits: 2, range: [80, 100],
-      series: [{stroke: COLOURS.temp}, {stroke: "#555", width: 1, dash: [6, 6]}],
+      series: [{stroke: COLOURS.temp}, {stroke: COLOURS.target, width: 1, dash: [6, 6]}],
       band: () => target == null ? null : [target - 1, target + 1],
     });
     widgets.pwm = createWidget(grid, {
       title: "Heater (Target PWM)", unit: "%", digits: 1, range: [0, 100],
-      series: [{stroke: COLOURS.pwm, fill: "rgba(220, 57, 18, 0.12)"}],
+      series: [{stroke: COLOURS.pwm, fill: "rgba(207, 92, 54, 0.14)"}],
     });
     widgets.integrator = createWidget(grid, {
       title: "PID error integrator", unit: "", digits: 2, range: [0, 0],
@@ -152,7 +157,7 @@
     });
     widgets.wifi = createWidget(grid, {
       title: "WiFi signal", unit: "%", digits: 0, range: [0, 100],
-      series: [{stroke: COLOURS.wifi, fill: "rgba(26, 188, 156, 0.12)"}],
+      series: [{stroke: COLOURS.wifi, fill: "rgba(58, 169, 159, 0.12)"}],
     });
   }
 
@@ -230,82 +235,23 @@
  </script>
 </head>
 <body>
-  <style>
-    .dashboard-head {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
+<header class="topbar">
+  <a class="brand" href="/"><img src="favicon-32x32.png" alt="">BananaCoffee</a>
+  <nav class="navbar">
+    <a href="/" class="active">Home</a>
+    <a href="graphs.html">Graphs</a>
+    <a href="settings.html">Settings</a>
+    <a href="ota.html">Update</a>
+    <a href="log.html">Log</a>
+  </nav>
+</header>
 
-    .range button {
-      background: #eee;
-      border: 1px solid #ccc;
-      padding: 6px 12px;
-      cursor: pointer;
-      border-radius: 4px;
-    }
-
-    .range button.active {
-      background: #1abc9c;
-      border-color: #1abc9c;
-      color: white;
-    }
-
-    #widgets {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
-    }
-
-    .widget {
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 12px;
-      min-width: 0;
-    }
-
-    .widget-title {
-      font-size: 13px;
-      color: #666;
-    }
-
-    .widget-value {
-      font-size: 32px;
-      font-weight: bold;
-      font-variant-numeric: tabular-nums;
-      margin: 4px 0 2px;
-    }
-
-    .widget-sub {
-      font-size: 12px;
-      color: #888;
-      margin-bottom: 8px;
-    }
-
-    .widget-plot {
-      width: 100%;
-    }
-  </style>
-
-<div class="header">
-  <h1>BananaCoffee</h1>
-  A simple <b>web interface</b> to control Rancilio Silvia espresso machine.
-</div>
-
-<div class="navbar">
-  <a href="/" class="active">Home</a>
-  <a href="graphs.html">Graphs</a>
-  <a href="settings.html">Settings</a>
-  <a href="ota.html">OTA</a>
-  <a href="log.html">Debug Log</a>
-  <a href="#" class="right">About</a>
-</div>
-
-<div class="main">
-  <div class="dashboard-head">
-    <h2>Dashboard</h2>
+<main class="main">
+  <div class="page-head">
+    <div class="head-group">
+      <h2>Dashboard</h2>
+      <span class="pill">Uptime <b id="uptime">-</b></span>
+    </div>
     <div class="range">
       <button data-seconds="120" onclick="setWindow(this)">2 min</button>
       <button data-seconds="300" onclick="setWindow(this)" class="active">5 min</button>
@@ -313,14 +259,13 @@
       <button data-seconds="3600" onclick="setWindow(this)">1 h</button>
     </div>
   </div>
-  <p>Uptime: <span id="uptime">-</span></p>
   <div id="widgets"></div>
-</div>
+</main>
 
-<div class="footer">
-  <h5 id="version">BananaCoffee</h5>
+<footer class="footer">
+  <span id="version">BananaCoffee</span>
   <script src="footer.js"></script>
-</div>
+</footer>
 
 </body>
 </html>
