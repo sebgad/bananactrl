@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] - 2026-09-28
+
+### Changed
+- Reworked web UI: muted banana yellow on espresso brown, sticky top bar, cards, automatic dark mode (also
+  for the charts). Settings sections are shown as cards; menu entries "OTA" and "Debug Log" are now
+  "Update" and "Log".
+
+### Fixed
+- The debug log is shown as plain text (no HTML from log lines) and loads immediately.
+
 ## [1.0.0-rc.2] - 2026-09-28
 
 ### Added
@@ -32,6 +42,7 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.3...HEAD
+[1.0.0-rc.3]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/sebgad/bananactrl/releases/tag/v1.0.0-rc.1
