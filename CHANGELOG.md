@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-09-28
+
 ### Added
 - Firmware version from git tags, shown in the web UI footer and served as `/version.json`.
 - GitHub Actions: build and host tests for every push and pull request, releases from `v*` tags.
@@ -23,4 +25,5 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/commits/main
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/sebgad/bananactrl/releases/tag/v1.0.0-rc.1
