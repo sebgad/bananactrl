@@ -14,6 +14,7 @@ TEST(WebPaths, ServesOnlyTheKnownFiles)
 {
     EXPECT_EQ(staticFileFor("/"), "index.html");
     EXPECT_EQ(staticFileFor("/graphs.html"), "graphs.html");
+    EXPECT_EQ(staticFileFor("/footer.js"), "footer.js");
     EXPECT_EQ(staticFileFor("/recentlogfile.txt"), "logfile_recent.txt");
     EXPECT_EQ(staticFileFor("/lastlogfile.txt"), "logfile_last.txt");
     EXPECT_EQ(staticFileFor("/data.csv?nocache=1"), "data.csv");
@@ -83,6 +84,16 @@ TEST(LiveValues, ArduinoKeyNames)
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorIntegrator"].as<float>(), 1.5F);
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorDiff"].as<float>(), -0.5F);
     EXPECT_EQ(doc["WiFi"]["SignalStrength in %"].as<int>(), 64);
+}
+
+TEST(LiveValues, VersionJson)
+{
+    JsonDocument doc;
+    ASSERT_EQ(deserializeJson(doc, versionJson("1.2.0-3-gabc1234", "v6.1", "Sep 28 2026 12:00:00")),
+              DeserializationError::Ok);
+    EXPECT_EQ(doc["Version"], "1.2.0-3-gabc1234");
+    EXPECT_EQ(doc["IdfVersion"], "v6.1");
+    EXPECT_EQ(doc["Built"], "Sep 28 2026 12:00:00");
 }
 
 TEST(WebPaths, BundledChartLibraryIsGzipped)

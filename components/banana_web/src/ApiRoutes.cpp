@@ -3,6 +3,7 @@
 #include <chrono>
 #include <utility>
 
+#include "esp_app_desc.h"
 #include "esp_log.h"
 
 #include "banana/config/ConfigJson.hpp"
@@ -23,6 +24,9 @@ Result<void> ApiRoutes::registerOn(WebServer& server)
     if (auto res = server.on<ApiRoutes, &ApiRoutes::lastValues>("/lastvalues.json", HTTP_GET, *this); !res) {
         return res;
     }
+    if (auto res = server.on<ApiRoutes, &ApiRoutes::version>("/version.json", HTTP_GET, *this); !res) {
+        return res;
+    }
     if (auto res = server.on<ApiRoutes, &ApiRoutes::params>("/params.json", HTTP_GET, *this); !res) {
         return res;
     }
@@ -39,6 +43,13 @@ esp_err_t ApiRoutes::lastValues(HttpRequest& request)
 {
     const std::string json = lastValuesJson(heater_->snapshot(), wifi_->rssiPercent().value_or(0));
     return request.send(Status::Ok, "application/json", json);
+}
+
+esp_err_t ApiRoutes::version(HttpRequest& request)
+{
+    const esp_app_desc_t* app = esp_app_get_description();
+    const std::string built = std::string{app->date} + " " + app->time;
+    return request.send(Status::Ok, "application/json", versionJson(app->version, app->idf_ver, built));
 }
 
 esp_err_t ApiRoutes::params(HttpRequest& request)

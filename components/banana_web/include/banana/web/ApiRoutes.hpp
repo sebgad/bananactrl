@@ -8,7 +8,7 @@
 
 namespace banana::web {
 
-/// Live values and settings: /lastvalues.json, /params.json, /paramUpdate, /paramReset, /restartesp.
+/// Live values and settings: /lastvalues.json, /version.json, /params.json, /paramUpdate, /paramReset, /restartesp.
 class ApiRoutes {
 public:
     /// All referenced objects must outlive the server.
@@ -21,6 +21,7 @@ public:
 
 private:
     esp_err_t lastValues(HttpRequest& request);
+    esp_err_t version(HttpRequest& request);
     esp_err_t params(HttpRequest& request);
     esp_err_t paramUpdate(HttpRequest& request);
     esp_err_t paramReset(HttpRequest& request);

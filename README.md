@@ -114,3 +114,53 @@ tools/clang_tidy.py
 ```
 
 Once a minute the log shows `health: heap free …, min …; log dropped …, write errors …` for soak tests.
+
+## Versioning and releases
+
+Versions follow [Semantic Versioning](https://semver.org/) and come from git tags `vMAJOR.MINOR.PATCH`; there is
+no version number in the sources. `CMakeLists.txt` runs `git describe` and embeds the result in the app
+descriptor (`esp_app_get_description()->version`). It is shown in the web UI footer, served as `/version.json`,
+reported to Home Assistant and printed at boot (`App version:`).
+
+| Checkout                          | Firmware version     |
+|-----------------------------------|----------------------|
+| on tag `v1.2.0`                   | `1.2.0`              |
+| 3 commits after it                | `1.2.0-3-gabc1234`   |
+| with uncommitted changes          | `…-dirty`            |
+| no tag yet                        | `0.0.0-gabc1234`     |
+
+Set `BANANA_VERSION` in the environment to override it (e.g. for a build from a source archive without `.git`).
+
+- **MAJOR**: incompatible changes: the settings/NVS layout or `params.json` keys change without migration,
+  the partition table changes (needs a USB flash, OTA is not enough), MQTT topics or HTTP routes are removed.
+- **MINOR**: new features, compatible with existing settings and the partition table.
+- **PATCH**: bug fixes only.
+- Pre-releases: `v1.3.0-rc.1`.
+
+The web pages in `data/` are part of the same version: the LittleFS image (`storage.bin`) is built from the
+tagged tree too.
+
+### Making a release
+
+1. Move the entries under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) to a new `## [1.2.0] - YYYY-MM-DD`
+   section and commit it on `main`.
+2. Tag and push:
+   ```sh
+   git tag -a v1.2.0 -m "bananactrl 1.2.0"
+   git push origin main v1.2.0
+   ```
+3. [.github/workflows/release.yml](.github/workflows/release.yml) builds the tag, checks that the firmware
+   reports exactly `1.2.0`, and creates the GitHub release with the changelog section as notes. Tags with a
+   `-` (`v1.3.0-rc.1`) become pre-releases.
+
+Release assets:
+
+| File                             | Use                                                                    |
+|----------------------------------|------------------------------------------------------------------------|
+| `bananactrl-<version>.bin`       | OTA page → firmware (MD5 from `MD5SUMS`) or `app-flash`                |
+| `storage-<version>.bin`          | LittleFS image (web pages); erases data.csv and logs                   |
+| `bananactrl-factory-<version>.bin` | everything merged, for a new board: `esptool.py write_flash 0x0 bananactrl-factory-<version>.bin` |
+| `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, `flash_args` | individual images and their offsets |
+
+[.github/workflows/build.yml](.github/workflows/build.yml) builds the firmware and runs the host tests for
+every push to `main` and every pull request.

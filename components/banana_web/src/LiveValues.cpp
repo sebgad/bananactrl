@@ -26,6 +26,18 @@ std::string lastValuesJson(const control::ProcessSnapshot& snapshot, int wifiPer
     return json;
 }
 
+std::string versionJson(std::string_view version, std::string_view idfVersion, std::string_view built)
+{
+    JsonDocument doc;
+    doc["Version"] = version;
+    doc["IdfVersion"] = idfVersion;
+    doc["Built"] = built;
+
+    std::string json;
+    serializeJson(doc, json);
+    return json;
+}
+
 std::string rowsJson(std::span<const storage::csv::Row> rows)
 {
     std::string json = "[";

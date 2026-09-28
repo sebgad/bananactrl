@@ -23,6 +23,7 @@ inline constexpr std::array kStaticFiles{
     StaticFile{.uri = "/ota.html", .file = "ota.html"},
     StaticFile{.uri = "/log.html", .file = "log.html"},
     StaticFile{.uri = "/style.css", .file = "style.css"},
+    StaticFile{.uri = "/footer.js", .file = "footer.js"},
     StaticFile{.uri = "/favicon-16x16.png", .file = "favicon-16x16.png"},
     StaticFile{.uri = "/favicon-32x32.png", .file = "favicon-32x32.png"},
     StaticFile{.uri = "/apple-touch-icon.png", .file = "apple-touch-icon.png"},
