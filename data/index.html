@@ -8,99 +8,216 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- uPlot, bundled in LittleFS (third_party/uplot): works without internet -->
+  <link rel="stylesheet" href="uPlot.min.css">
+  <script type="text/javascript" src="uPlot.min.js"></script>
+
   <script type="text/javascript">
-  // Dial gauges drawn as SVG (no external chart library: works in SoftAP mode without internet).
-  // Bands as in the former Google gauges: yellow below target-1, green target+-1, red above.
-  const SVG_NS = "http://www.w3.org/2000/svg";
+  // Dashboard widgets: one tile per value with the live reading and a uPlot trend of the last minutes.
+  // Temperature, heater and target are seeded from data.csv, then everything follows the `values` event.
+  const COLOURS = {below: "#f1c40f", onTarget: "#27ae60", above: "#e74c3c", temp: "#3366cc", pwm: "#dc3912",
+                   pid: "#8e44ad", wifi: "#1abc9c"};
+  let windowSeconds = 300;
+  const TICK_STEPS = {120: 30, 300: 60, 900: 300, 3600: 900}; // x grid per window (buttons below)
+  const widgets = {};
 
-  function polar(cx, cy, r, fraction) {
-    const angle = Math.PI * (1 - fraction); // 0 = left, 1 = right
-    return [cx + r * Math.cos(angle), cy - r * Math.sin(angle)];
-  }
-
-  function arcPath(cx, cy, r, from, to) {
-    const [x1, y1] = polar(cx, cy, r, from);
-    const [x2, y2] = polar(cx, cy, r, to);
-    return "M" + x1 + " " + y1 + " A" + r + " " + r + " 0 0 1 " + x2 + " " + y2;
-  }
-
-  function createGauge(elementId, label, max, unit) {
-    const svg = document.createElementNS(SVG_NS, "svg");
-    svg.setAttribute("viewBox", "0 0 200 125");
-    svg.setAttribute("width", "260");
-    const bands = document.createElementNS(SVG_NS, "g");
-    const needle = document.createElementNS(SVG_NS, "line");
-    needle.setAttribute("x1", 100); needle.setAttribute("y1", 105);
-    needle.setAttribute("stroke", "#c0392b"); needle.setAttribute("stroke-width", 3);
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", 100); text.setAttribute("y", 95); text.setAttribute("text-anchor", "middle");
-    text.setAttribute("font-size", 18);
-    const caption = document.createElementNS(SVG_NS, "text");
-    caption.setAttribute("x", 100); caption.setAttribute("y", 122); caption.setAttribute("text-anchor", "middle");
-    caption.setAttribute("font-size", 12); caption.textContent = label;
-    svg.append(bands, needle, text, caption);
-    document.getElementById(elementId).appendChild(svg);
-
+  // Ring of [time, value, ...] columns; rows older than the longest window are dropped.
+  function createHistory(columns) {
+    const data = Array.from({length: columns}, () => []);
     return {
-      setBands(list) { // [[from, to, colour], ...] in value units
-        bands.replaceChildren();
-        const base = document.createElementNS(SVG_NS, "path");
-        base.setAttribute("d", arcPath(100, 105, 80, 0, 1));
-        base.setAttribute("stroke", "#ddd"); base.setAttribute("stroke-width", 14); base.setAttribute("fill", "none");
-        bands.appendChild(base);
-        for (const [from, to, colour] of list) {
-          const f = Math.max(0, Math.min(1, from / max)), t = Math.max(0, Math.min(1, to / max));
-          if (t <= f) continue;
-          const band = document.createElementNS(SVG_NS, "path");
-          band.setAttribute("d", arcPath(100, 105, 80, f, t));
-          band.setAttribute("stroke", colour); band.setAttribute("stroke-width", 14); band.setAttribute("fill", "none");
-          bands.appendChild(band);
-        }
-      },
-      setValue(value) {
-        const [x, y] = polar(100, 105, 70, Math.max(0, Math.min(1, value / max)));
-        needle.setAttribute("x2", x); needle.setAttribute("y2", y);
-        text.textContent = value.toFixed(2) + " " + unit;
+      data,
+      add(time, ...values) {
+        const t = data[0];
+        if (t.length && !(time > t[t.length - 1])) return; // data.csv and live values overlap
+        t.push(time);
+        values.forEach((v, i) => data[i + 1].push(v));
+        while (t.length && t[0] < time - 3600) data.forEach(c => c.shift());
       },
     };
   }
 
-  function showTable(elementId, values, skip) {
-    const div = document.getElementById(elementId);
-    for (const key in values) {
-      if (key === skip) continue;
-      let row = document.getElementById(key);
-      if (!row) {
-        row = document.createElement("div");
-        row.id = key;
-        div.appendChild(row);
-      }
-      row.innerHTML = "<p style='width:20%;'> <b>" + key + "</b> </p><p style='width:20%;'>" + values[key] + "</p>";
+  // hooks.draw: horizontal band between two values of scale "y" (target +-1 for the temperature)
+  function bandHook(getBand, colour) {
+    return u => {
+      const band = getBand();
+      if (!band) return;
+      const top = u.valToPos(band[1], "y", true), bottom = u.valToPos(band[0], "y", true);
+      u.ctx.save();
+      u.ctx.fillStyle = colour;
+      u.ctx.fillRect(u.bbox.left, top, u.bbox.width, bottom - top);
+      u.ctx.restore();
+    };
+  }
+
+  // Tile with title, big value, sub line and a uPlot trend. series: [{label, stroke, fill, dash}], y range [min, max]
+  function createWidget(parent, {title, unit, digits, series, range, band}) {
+    const tile = document.createElement("div");
+    tile.className = "widget";
+    tile.innerHTML = "<div class='widget-title'>" + title + "</div><div class='widget-value'>-</div>" +
+                     "<div class='widget-sub'>&nbsp;</div><div class='widget-plot'></div>";
+    parent.appendChild(tile);
+    const valueEl = tile.querySelector(".widget-value"), subEl = tile.querySelector(".widget-sub");
+    const plotEl = tile.querySelector(".widget-plot");
+    const history = createHistory(series.length + 1);
+    const format = v => v == null || isNaN(v) ? "-" : v.toFixed(digits);
+
+    // hover shows the value under the cursor instead of the latest one
+    let latest = null, hovering = false;
+    function showCursor(u) {
+      if (u.cursor.idx == null) return;
+      hovering = true;
+      const idx = u.cursor.idx, age = u.data[0][idx] - u.data[0][u.data[0].length - 1];
+      valueEl.textContent = format(u.data[1][idx]) + " " + unit;
+      valueEl.style.color = "";
+      subEl.textContent = Math.round(age) + " s";
+    }
+
+    const plot = new uPlot({
+      width: plotEl.clientWidth || 280,
+      height: 110,
+      legend: {show: false},
+      cursor: {y: false, points: {size: 6}},
+      scales: {
+        x: {time: false, range: (u, min, max) => max == null ? [0, windowSeconds] : [max - windowSeconds, max]},
+        y: {range: (u, min, max) => {
+          const low = min == null ? range[0] : Math.min(range[0], min);
+          const high = max == null ? range[1] : Math.max(range[1], max);
+          return high - low < 1e-6 ? [low - 1, high + 1] : [low, high]; // flat series (e.g. integrator at 0)
+        }},
+      },
+      axes: [
+        {size: 22, font: "10px sans-serif", grid: {stroke: "#eee"}, ticks: {show: false},
+         splits: u => { // counted back from the newest sample: "-4m" ... "now"
+           const max = u.scales.x.max, step = TICK_STEPS[windowSeconds], splits = [];
+           for (let t = max - windowSeconds; t <= max + 0.001; t += step) splits.push(t);
+           return splits;
+         },
+         values: (u, splits) => splits.map(t => {
+           const age = Math.round(u.scales.x.max - t);
+           return age === 0 ? "now" : age < 60 ? "-" + age + "s" : "-" + Math.round(age / 6) / 10 + "m";
+         })},
+        {size: 34, space: 25, font: "10px sans-serif", grid: {stroke: "#eee"}, ticks: {show: false}},
+      ],
+      series: [{}, ...series.map(s => ({width: 2, points: {show: false}, ...s}))],
+      hooks: {
+        drawClear: band ? [bandHook(band, "rgba(39, 174, 96, 0.15)")] : [],
+        setCursor: [showCursor],
+      },
+    }, history.data, plotEl);
+    plot.over.addEventListener("mouseleave", () => { hovering = false; show(latest); });
+
+    function show(entry) {
+      if (!entry) return;
+      valueEl.textContent = format(entry.value) + " " + unit;
+      valueEl.style.color = entry.colour || "";
+      subEl.innerHTML = entry.sub || "&nbsp;";
+    }
+
+    new ResizeObserver(() => {
+      if (plotEl.clientWidth) plot.setSize({width: plotEl.clientWidth, height: 110});
+    }).observe(plotEl);
+
+    return {
+      history,
+      redraw() { plot.setData(history.data); },
+      set(entry) { latest = entry; if (!hovering) show(entry); },
+    };
+  }
+
+  function temperatureColour(temp, target) {
+    if (temp < target - 1) return COLOURS.below;
+    return temp > target + 1 ? COLOURS.above : COLOURS.onTarget;
+  }
+
+  let target = null;
+
+  function createWidgets() {
+    const grid = document.getElementById("widgets");
+    widgets.temp = createWidget(grid, {
+      title: "Temperature", unit: "°C", digits: 2, range: [80, 100],
+      series: [{stroke: COLOURS.temp}, {stroke: "#555", width: 1, dash: [6, 6]}],
+      band: () => target == null ? null : [target - 1, target + 1],
+    });
+    widgets.pwm = createWidget(grid, {
+      title: "Heater (Target PWM)", unit: "%", digits: 1, range: [0, 100],
+      series: [{stroke: COLOURS.pwm, fill: "rgba(220, 57, 18, 0.12)"}],
+    });
+    widgets.integrator = createWidget(grid, {
+      title: "PID error integrator", unit: "", digits: 2, range: [0, 0],
+      series: [{stroke: COLOURS.pid}],
+    });
+    widgets.diff = createWidget(grid, {
+      title: "PID error derivative", unit: "", digits: 3, range: [0, 0],
+      series: [{stroke: COLOURS.pid}],
+    });
+    widgets.wifi = createWidget(grid, {
+      title: "WiFi signal", unit: "%", digits: 0, range: [0, 100],
+      series: [{stroke: COLOURS.wifi, fill: "rgba(26, 188, 156, 0.12)"}],
+    });
+  }
+
+  function redrawAll() {
+    for (const key in widgets) widgets[key].redraw();
+  }
+
+  function showValues(values) {
+    const time = values["Time"], pid = values["PID"], temp = values["Temperature"];
+    target = pid["TargetValue"];
+    const wifi = values["WiFi"]["SignalStrength in %"];
+
+    widgets.temp.history.add(time, temp, target);
+    widgets.pwm.history.add(time, pid["TargetPWM"]);
+    widgets.integrator.history.add(time, pid["ErrorIntegrator"]);
+    widgets.diff.history.add(time, pid["ErrorDiff"]);
+    widgets.wifi.history.add(time, wifi);
+
+    const delta = temp - target;
+    widgets.temp.set({value: temp, colour: temperatureColour(temp, target),
+                      sub: "target " + target.toFixed(1) + " °C (" + (delta >= 0 ? "+" : "") + delta.toFixed(2) + ")"});
+    widgets.pwm.set({value: pid["TargetPWM"], sub: pid["TargetPWM"] > 0 ? "heating" : "idle"});
+    widgets.integrator.set({value: pid["ErrorIntegrator"]});
+    widgets.diff.set({value: pid["ErrorDiff"]});
+    widgets.wifi.set({value: wifi});
+    document.getElementById("uptime").textContent = formatDuration(time);
+    redrawAll();
+  }
+
+  function formatDuration(seconds) {
+    const h = Math.floor(seconds / 3600), m = Math.floor(seconds / 60) % 60, s = Math.floor(seconds) % 60;
+    return (h ? h + " h " : "") + m + " min " + s + " s";
+  }
+
+  // data.csv: header lines up to "Time,...", then time,temperature,pwm,target,brewing
+  function seedFromCsv(text) {
+    const lines = text.split(/\r?\n/);
+    for (let row = lines.findIndex(line => line.startsWith("Time,")) + 1; row > 0 && row < lines.length; row++) {
+      const cells = lines[row].split(",").map(parseFloat);
+      if (cells.length < 4) continue;
+      widgets.temp.history.add(cells[0], cells[1], cells[3]);
+      widgets.pwm.history.add(cells[0], cells[2]);
     }
   }
 
-  let gaugeTemp, gaugePwm;
-
-  function showValues(values) {
-    const target = values["PID"]["TargetValue"];
-    gaugeTemp.setBands([[0, target - 1, "#f1c40f"], [target - 1, target + 1, "#27ae60"], [target + 1, 120, "#e74c3c"]]);
-    gaugeTemp.setValue(values["Temperature"]);
-    gaugePwm.setValue(values["PID"]["TargetPWM"]);
-    showTable("pid_values", values["PID"], "TargetPWM");
-    showTable("wifi_values", values["WiFi"], "");
-  }
-
-  function poll() { // fallback without server-sent events
+  function get(url, onLoad) {
     const xhr = new XMLHttpRequest();
-    xhr.open("GET", "lastvalues.json");
-    xhr.onload = function() { showValues(JSON.parse(xhr.responseText)); };
+    xhr.open("GET", url);
+    xhr.onload = function() { if (xhr.status === 200) onLoad(xhr.responseText); };
     xhr.send();
   }
 
+  function poll() { // fallback without server-sent events
+    get("lastvalues.json", text => showValues(JSON.parse(text)));
+  }
+
+  function setWindow(button) {
+    windowSeconds = parseInt(button.dataset.seconds);
+    document.querySelectorAll(".range button").forEach(b => b.classList.toggle("active", b === button));
+    redrawAll();
+  }
+
   window.onload = function() {
-    gaugeTemp = createGauge("gauge_Temp", "Temp", 120, "\u00b0C");
-    gaugePwm = createGauge("gauge_PWM", "PWM", 100, "%");
-    gaugePwm.setBands([[0, 50, "#f1c40f"], [50, 100, "#e74c3c"]]);
+    createWidgets();
+    get("data.csv", text => { seedFromCsv(text); redrawAll(); });
     poll();
     if (window.EventSource) {
       // pushed once per second by the ESP (/events)
@@ -114,22 +231,63 @@
 </head>
 <body>
   <style>
-    p {
+    .dashboard-head {
       display: flex;
-      justify-content: left;
+      flex-wrap: wrap;
+      justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
 
-    p > span {
-      display: inline-block;
-      width: 20px;
+    .range button {
+      background: #eee;
+      border: 1px solid #ccc;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 4px;
     }
 
-    p > span:first-child {
-      display: inline-block;
-      width: 200px;
+    .range button.active {
+      background: #1abc9c;
+      border-color: #1abc9c;
+      color: white;
     }
-    </style>
+
+    #widgets {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .widget {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .widget-title {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .widget-value {
+      font-size: 32px;
+      font-weight: bold;
+      font-variant-numeric: tabular-nums;
+      margin: 4px 0 2px;
+    }
+
+    .widget-sub {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .widget-plot {
+      width: 100%;
+    }
+  </style>
 
 <div class="header">
   <h1>BananaCoffee</h1>
@@ -146,18 +304,17 @@
 </div>
 
 <div class="main">
-  <h2>Dashboard</h2>
-  <h3>PID controller</h3>
-  <div class="item", id="pid_values", width="80%" style="text-align: left;"></div>
-  <h4>Temperature Sensor / PWM Target value</h4>
-  <table border="0">
-  <tr>
-    <td><div class="item", id="gauge_Temp", height="100px"></div></td>
-    <td><div class="item", id="gauge_PWM", height="100px"></div></td>
-  </tr>
-  </table>
-  <h3>WiFi</h3>
-  <div class="item", id="wifi_values", width="80%" style="text-align: left;"></div>
+  <div class="dashboard-head">
+    <h2>Dashboard</h2>
+    <div class="range">
+      <button data-seconds="120" onclick="setWindow(this)">2 min</button>
+      <button data-seconds="300" onclick="setWindow(this)" class="active">5 min</button>
+      <button data-seconds="900" onclick="setWindow(this)">15 min</button>
+      <button data-seconds="3600" onclick="setWindow(this)">1 h</button>
+    </div>
+  </div>
+  <p>Uptime: <span id="uptime">-</span></p>
+  <div id="widgets"></div>
 </div>
 
 <div class="footer">
