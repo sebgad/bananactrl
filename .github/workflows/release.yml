@@ -43,9 +43,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           cd dist
-          for f in bananactrl bananactrl-factory storage; do mv "$f.bin" "$f-$version.bin"; done
-          mv webui.tar "webui-$version.tar"
-          md5sum *.bin *.tar > MD5SUMS
+          # the assets already carry the version in their names (tools/dist.py)
           prerelease=""
           [[ "$version" == *-* ]] && prerelease="--prerelease"
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "bananactrl $version" \

@@ -44,3 +44,13 @@ project(bananactrl)
 
 # Web UI in data/ -> LittleFS image, flashed together with the app
 littlefs_create_partition_image(storage data FLASH_IN_PROJECT)
+
+# Release assets as on GitHub (bananactrl-<version>.bin, webui-<version>.tar, MD5SUMS, ...) in build/dist/,
+# for the upload on the OTA page. Runs on every build: the LittleFS image above is rebuilt every time, too.
+idf_build_get_property(python PYTHON)
+idf_build_get_property(idf_target IDF_TARGET)
+add_custom_target(dist ALL
+    COMMAND ${python} ${CMAKE_CURRENT_LIST_DIR}/tools/dist.py --build-dir ${CMAKE_BINARY_DIR}
+            --data-dir ${CMAKE_CURRENT_LIST_DIR}/data --version ${PROJECT_VER} --chip ${idf_target}
+    DEPENDS app bootloader partition_table_bin blank_ota_data littlefs_storage_bin
+    VERBATIM)

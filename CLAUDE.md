@@ -27,6 +27,7 @@ or recording behaviour.
 | `data/` | Web UI, flashed as the LittleFS image (`storage` partition); `uPlot.min.js.gz` is the bundled chart library, `footer.js` shows the firmware version |
 | `test/host/` | GoogleTest unit tests for the pure-logic sources, built with the host compiler; `shim/` (ESP-IDF header stand-ins), `fakes.hpp`, `reference/` (original Arduino PID as golden reference), `data/` (measurement tables) |
 | `tools/clang_tidy.py` | clang-tidy over `main/` and `components/` with Espressif's clang |
+| `tools/dist.py` | release assets (`bananactrl-<version>.bin`, `webui-<version>.tar`, `MD5SUMS`, ...) into `build/dist/`; run by every `idf.py build` and by CI |
 | `third_party/uplot/` | uPlot license and provenance |
 | `.github/workflows/` | `build.yml` (firmware + host tests on push/PR), `release.yml` (GitHub release from `v*` tags) |
 | `partitions.csv` | nvs, otadata, two 2 MB OTA slots, 8 MB LittleFS |
@@ -107,7 +108,7 @@ Wi-Fi credentials); after changing a defaults file, delete `sdkconfig` and rebui
   with new `data.csv` rows); pages fall back to polling.
 - `WebServer` allows 16 URI handlers (`maxUriHandlers`), 13 are used; check the count when adding routes.
 - Updates from GitHub need the release assets `bananactrl-<version>.bin`, `MD5SUMS` and (for the pages)
-  `webui-<version>.tar`; keep these names in `release.yml` and `Release.cpp` in sync. A new file in `data/`
+  `webui-<version>.tar`; keep these names in `tools/dist.py`, `Release.cpp` and `data/ota.html` in sync. A new file in `data/`
   reaches devices through the archive; its name must pass `isValidUploadName()`.
 - **Versioning:** no version number in the sources. `CMakeLists.txt` derives it from git tags `vX.Y.Z`
   (`git describe`), exposed via `esp_app_get_description()->version` and `/version.json`. Releases:

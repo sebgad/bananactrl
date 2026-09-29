@@ -36,6 +36,19 @@
   <progress id="updateProgress" hidden></progress>
   <div id="updateStatus" class="status"></div>
   <script>
+    // Reload once the new firmware answers (after an update from GitHub or an upload)
+    function waitForRestart() {
+      setTimeout(function retry() {
+        fetch("/version.json").then(function(response) {
+          if (response.ok) {
+            location.reload();
+          } else {
+            setTimeout(retry, 2000);
+          }
+        }).catch(function() { setTimeout(retry, 2000); });
+      }, 8000);
+    }
+
     // Firmware and web UI of the newest release; the controller downloads them itself (needs internet).
     (function() {
       var info = document.getElementById("updateInfo");
@@ -90,19 +103,6 @@
           .catch(function() {});
       }
 
-      // Reload once the new firmware answers
-      function waitForRestart() {
-        setTimeout(function retry() {
-          fetch("/version.json").then(function(response) {
-            if (response.ok) {
-              location.reload();
-            } else {
-              setTimeout(retry, 2000);
-            }
-          }).catch(function() { setTimeout(retry, 2000); });
-        }, 8000);
-      }
-
       function start(request) {
         fetch("/update", {method: "POST", headers: {"Content-Type": "application/json"},
                           body: JSON.stringify(request)})
@@ -134,47 +134,185 @@
 
   <div class="card">
   <h3>Firmware upload</h3>
-  <form id="firmwareForm" class="form-grid">
+  <p class="subtle">The files from <code>build/dist/</code> of a local build (<code>idf.py build</code>) or the
+    assets of a GitHub release.</p>
+  <form id="buildForm" class="form-grid">
+    <label for="firmwareFile">Firmware: bananactrl-&lt;version&gt;.bin</label>
     <input type="file" id="firmwareFile" accept=".bin">
-    <label for="MD5">MD5 checksum of the firmware</label>
-    <input type="text" name="MD5" id="MD5">
-    <div><input type="submit" name="upload" value="Upload firmware" title="Upload Firmware"></div>
+    <label for="md5File">Checksums: MD5SUMS</label>
+    <input type="file" id="md5File">
+    <label for="webUiFile">Web UI (optional): webui-&lt;version&gt;.tar</label>
+    <input type="file" id="webUiFile" accept=".tar">
+    <div><input type="submit" id="buildButton" value="Upload firmware" title="Upload the firmware"></div>
   </form>
-  </div>
-
-  <div class="card">
-  <h3>Web UI file upload</h3>
-  <form id="dataForm" class="form-grid">
-    <input type="file" id="dataFile">
-    <div><input type="submit" name="upload" value="Upload file" title="Upload File"></div>
-  </form>
-  <p id="uploadStatus" class="status"></p>
+  <progress id="buildProgress" hidden></progress>
+  <p id="buildStatus" class="status"></p>
   <script>
-    // The file is sent as the raw request body (the ESP-IDF web server has no multipart parser).
-    function upload(url, file, headers) {
-      var status = document.getElementById("uploadStatus");
-      if (!file) {
-        alert("No file selected");
-        return;
+    // As an update from GitHub, but from the browser: first the files of the web UI archive, one by one
+    // (unpacked here, the web server only takes single files), then the firmware, which restarts the controller.
+    (function() {
+      var status = document.getElementById("buildStatus");
+      var progress = document.getElementById("buildProgress");
+      var button = document.getElementById("buildButton");
+      // WebPaths.hpp: kRuntimeFiles and isValidUploadName()
+      var runtimeFiles = ["params.json", "data.csv", "logfile_recent.txt", "logfile_last.txt"];
+
+      function isValidUploadName(name) {
+        return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,31}$/.test(name) && runtimeFiles.indexOf(name) < 0;
       }
-      status.textContent = "Uploading " + file.name + " ...";
-      fetch(url, {method: "POST", headers: headers, body: file})
-        .then(function(response) { return response.text(); })
-        .then(function(text) { status.textContent = text; alert(text); })
-        .catch(function(error) { status.textContent = "Upload failed: " + error; });
-    }
 
-    document.getElementById("firmwareForm").onsubmit = function(event) {
-      event.preventDefault();
-      upload("/ota_firmware", document.getElementById("firmwareFile").files[0],
-             {"X-MD5": document.getElementById("MD5").value.trim()});
-    };
+      // "<md5>  <name>" lines as written by md5sum
+      function md5For(sums, name) {
+        var lines = sums.split("\n");
+        for (var i = 0; i < lines.length; i++) {
+          var match = /^([0-9a-fA-F]{32}) [ *](.+?)\r?$/.exec(lines[i]);
+          if (match && match[2] === name) {
+            return match[1];
+          }
+        }
+        return null;
+      }
 
-    document.getElementById("dataForm").onsubmit = function(event) {
-      event.preventDefault();
-      var file = document.getElementById("dataFile").files[0];
-      upload("/ota_spiffs", file, file ? {"X-Filename": file.name} : {});
-    };
+      // Regular files of a ustar archive as [{name, data}]
+      function tarEntries(buffer) {
+        var bytes = new Uint8Array(buffer);
+        var entries = [];
+        function text(start, length) {
+          var end = start;
+          while (end < start + length && bytes[end] !== 0) {
+            end++;
+          }
+          return String.fromCharCode.apply(null, bytes.subarray(start, end));
+        }
+        for (var offset = 0; offset + 512 <= bytes.length;) {
+          var name = text(offset, 100);
+          if (!name) {
+            break; // end of archive
+          }
+          if (text(offset + 257, 5) !== "ustar") {
+            throw new Error("not a tar archive");
+          }
+          var prefix = text(offset + 345, 155);
+          var size = parseInt(text(offset + 124, 12).trim(), 8);
+          var type = text(offset + 156, 1);
+          offset += 512;
+          if (isNaN(size) || offset + size > bytes.length) {
+            throw new Error("tar archive damaged");
+          }
+          if (type === "" || type === "0") {
+            entries.push({name: prefix ? prefix + "/" + name : name,
+                          data: new Blob([bytes.subarray(offset, offset + size)])});
+          }
+          offset += Math.ceil(size / 512) * 512;
+        }
+        return entries;
+      }
+
+      function versionOf(file, pattern) {
+        var match = file && pattern.exec(file.name);
+        return match ? match[1] : null;
+      }
+
+      // Raw request body (the ESP-IDF web server has no multipart parser). XMLHttpRequest instead of fetch:
+      // only it reports the upload progress.
+      function post(url, body, headers, onProgress) {
+        return new Promise(function(resolve, reject) {
+          var request = new XMLHttpRequest();
+          request.open("POST", url);
+          Object.keys(headers).forEach(function(name) { request.setRequestHeader(name, headers[name]); });
+          request.upload.onprogress = function(event) { onProgress(event.loaded); };
+          request.onload = function() {
+            if (request.status >= 200 && request.status < 300) {
+              resolve(request.responseText);
+            } else {
+              reject(new Error(request.responseText || "HTTP " + request.status));
+            }
+          };
+          request.onerror = function() { reject(new Error("connection failed")); };
+          request.send(body);
+        });
+      }
+
+      document.getElementById("buildForm").onsubmit = function(event) {
+        event.preventDefault();
+        var firmware = document.getElementById("firmwareFile").files[0];
+        var sums = document.getElementById("md5File").files[0];
+        var webUi = document.getElementById("webUiFile").files[0];
+        if (!firmware || !sums) {
+          alert("Select the firmware and MD5SUMS (the controller checks the firmware with it)");
+          return;
+        }
+        var md5 = null;
+        var entries = [];
+        var restarting = false;
+        button.disabled = true;
+        sums.text().then(function(text) {
+          md5 = md5For(text, firmware.name);
+          if (!md5) {
+            throw new Error(firmware.name + " is not listed in " + sums.name);
+          }
+          return webUi ? webUi.arrayBuffer() : null;
+        }).then(function(buffer) {
+          if (buffer) {
+            entries = tarEntries(buffer);
+            if (!entries.length) {
+              throw new Error(webUi.name + " contains no files");
+            }
+            entries.forEach(function(entry) {
+              if (!isValidUploadName(entry.name)) {
+                throw new Error(webUi.name + ": file name " + entry.name + " not allowed");
+              }
+            });
+          }
+          var firmwareVersion = versionOf(firmware, /^bananactrl-(.+)\.bin$/);
+          var webUiVersion = versionOf(webUi, /^webui-(.+)\.tar$/);
+          var question = "Upload " + firmware.name + (webUi ? " and " + webUi.name : "") +
+            " and restart the controller?";
+          if (firmwareVersion && webUiVersion && firmwareVersion !== webUiVersion) {
+            question = "Firmware and web UI are from different versions. " + question;
+          }
+          if (!confirm(question)) {
+            return;
+          }
+
+          // One progress bar over all files, in bytes (as the update from GitHub)
+          var total = entries.reduce(function(sum, entry) { return sum + entry.data.size; }, firmware.size);
+          var done = 0;
+          function show(name, loaded) {
+            progress.value = done + loaded;
+            status.textContent = "Uploading " + name + ": " + Math.round((done + loaded) / 1024) + " of " +
+              Math.round(total / 1024) + " kB. The coffee machine keeps heating.";
+          }
+          function upload(url, name, body, headers) {
+            show(name, 0);
+            return post(url, body, headers, function(loaded) { show(name, loaded); })
+              .then(function() { done += body.size; });
+          }
+          progress.max = total;
+          progress.value = 0;
+          progress.hidden = false;
+          var chain = Promise.resolve();
+          entries.forEach(function(entry) {
+            chain = chain.then(function() {
+              return upload("/ota_spiffs", entry.name, entry.data, {"X-Filename": entry.name});
+            });
+          });
+          return chain.then(function() {
+            return upload("/ota_firmware", firmware.name, firmware, {"X-MD5": md5});
+          }).then(function() {
+            progress.value = total;
+            status.textContent = "Installed. Restarting ...";
+            restarting = true;
+            waitForRestart();
+          });
+        }).catch(function(error) {
+          status.textContent = "Upload failed: " + error.message;
+        }).then(function() {
+          button.disabled = restarting;
+          progress.hidden = !restarting;
+        });
+      };
+    })();
   </script>
   </div>
 </main>

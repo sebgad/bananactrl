@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Every build writes the release assets (`bananactrl-<version>.bin`, `webui-<version>.tar`, `MD5SUMS`, ...)
+  to `build/dist/`, the same files as a GitHub release.
+- OTA page: **Firmware upload** with one field each for the firmware, `MD5SUMS` and the (optional) web UI
+  archive, and a progress bar; the MD5 no longer has to be typed in.
+
+### Removed
+- OTA page: upload of single web UI files (the web UI archive replaces it).
+
 ## [1.0.0-rc.3] - 2026-09-28
 
 ### Changed
