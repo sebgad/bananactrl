@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-09-29
+
 ### Added
 - Every build writes the release assets (`bananactrl-<version>.bin`, `webui-<version>.tar`, `MD5SUMS`, ...)
   to `build/dist/`, the same files as a GitHub release.
@@ -51,7 +53,8 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.3...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.4...HEAD
+[1.0.0-rc.4]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/sebgad/bananactrl/releases/tag/v1.0.0-rc.1
