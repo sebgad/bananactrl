@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] - 2026-10-02
+
 ### Added
 - Steam mode, detected from the temperature (no input for the steam switch): from 105 °C the LED blinks
   magenta (Telekom #E20074), from 119 °C it is steady magenta; below 115 °C steam mode ends and the LED shows
@@ -63,7 +65,8 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.4...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.5...HEAD
+[1.0.0-rc.5]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.1...v1.0.0-rc.2
