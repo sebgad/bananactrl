@@ -14,7 +14,7 @@ flowchart TD
     mqtt["<b>banana_mqtt</b><br/>MqttService (esp-mqtt)<br/>HomeAssistant (host): topics,<br/>discovery, state, commands"]
     storage["<b>banana_storage</b><br/>LittleFs, Nvs, NvsNamespace, File<br/>FileLogger, MeasurementRecorder<br/>MeasurementCsv (host)"]
     config["<b>banana_config</b><br/>Config (host), ConfigJson (host)<br/>ConfigStore (NVS)"]
-    control["<b>banana_control</b> (host)<br/>ControlLoop, PidController<br/>BrewFeedForward, BrewDetector<br/>Diagnostics, StatusIndicator<br/>IHeaterControl"]
+    control["<b>banana_control</b> (host)<br/>ControlLoop, PidController<br/>BrewFeedForward, BrewDetector<br/>SteamStateMachine, MachineState<br/>Diagnostics, StatusIndicator<br/>IHeaterControl"]
     drivers["<b>banana_drivers</b><br/>Ads1115, Ssr, RgbLed<br/>TemperatureConverter, Pt1000 (host)"]
     hal["<b>banana_hal</b><br/>GpioInput/Output, I2cBus/Device, Ledc<br/>PeriodicTimer · rtos: Task, EventGroup, Watchdog"]
     core["<b>banana_core</b> (host)<br/>Result, Flags, board pins<br/>io interfaces: ITemperatureSensor,<br/>IPwmOutput, IStatusLed, IDigitalInput, INetworkStatus"]
@@ -161,6 +161,17 @@ format are unchanged. These differences are deliberate; do not "restore" the old
 - A settings change resets the PID integrator only when gains, active terms or output limits change (the
   Arduino firmware reset it on every update). With `CtrlIntFactor` 2000 s the integral needs over an hour to
   remove the remaining offset, so every target change from Home Assistant restarted that approach.
+- Steam mode (not in the Arduino firmware): detected from the temperature alone (`SteamStateMachine`; the steam
+  switch has no input and bypasses the SSR). From 105 °C the SSR stays off and the PID frozen (otherwise the
+  SSR could heat while the bimetal switch is open, and the integrator would wind down above the target);
+  below 115 °C after "ready" (119 °C) it is brew mode again with a reset PID, and only 119 °C returns to
+  steam ready until the temperature has dropped below 100 °C. Off for targets at or above that exit
+  temperature. All of these are settings (`Steam` section, `config::SteamSettings`), checked by
+  `config::invalidSetting()` on `/paramUpdate`; so is the ready band (`PID` → `ReadyBand`, fixed ±1 K in the
+  Arduino firmware).
+- The LED colour and the Home Assistant "State" sensor both come from `control::MachineState`
+  (`machineState()`: fault, brewing, steam, then temperature vs. target). `/lastvalues.json` has the extra
+  key `State`.
 - Kept on purpose: standby counts from boot, not from the last use, and lasts until reboot.
 - Fault flags are `Flags<Fault>`: the Arduino check `iErrorId == WIFI_DISCONNECT` could never be true because
   `NO_ERROR` was itself a bit. Fault, brewing and standby changes are logged once, not every 0.9 s.

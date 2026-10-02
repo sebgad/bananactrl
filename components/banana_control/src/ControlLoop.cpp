@@ -8,7 +8,7 @@ namespace banana::control {
 ControlLoop::ControlLoop(io::ITemperatureSensor& sensor, io::IPwmOutput& heater, io::IStatusLed& led,
                          const io::INetworkStatus& network, const config::Config& config, Millis start)
     : sensor_(&sensor), heater_(&heater), led_(&led), network_(&network), pid_(toPidSettings(config.pid)),
-      feedForward_(toBrewFeedForwardSettings(config.pid)), pidSettings_(config.pid),
+      feedForward_(toBrewFeedForwardSettings(config.pid)), steam_(config.steam), pidSettings_(config.pid),
       timeToStandby_(config.system.timeToStandby), start_(start), lastPid_(start), lastSample_(start)
 {
     sensor_->setFilterActive(config.signal.filterActive);
@@ -22,6 +22,7 @@ void ControlLoop::applyConfig(const config::Config& config)
     pidSettings_ = config.pid;
     pid_.configure(next);
     feedForward_.configure(toBrewFeedForwardSettings(config.pid));
+    steam_.configure(config.steam);
     sensor_->setFilterActive(config.signal.filterActive);
     timeToStandby_ = config.system.timeToStandby;
     // The integrator content belongs to the gains, active terms and output limits: start clean only if one of
@@ -43,6 +44,7 @@ void ControlLoop::onSample(Millis now)
     }
     snapshot_.seconds = static_cast<float>((now - start_).count()) / 1000.0F;
     snapshot_.celsius = celsius_;
+    steam_.update(celsius_, pidSettings_.target);
 
     // PID_CTRL on every 3rd conversion
     if (samples_++ % 3 == 0) {
@@ -57,7 +59,7 @@ void ControlLoop::onTick(Millis now)
 
     // LED_CTRL on every 3rd tick
     if (tick % 3 == 0) {
-        const LedCommand led = indicate(faults_, brew_.brewing(), celsius_, pidSettings_.target);
+        const LedCommand led = indicate(state());
         led_->show(led.color, led.channelGains, led.effect);
     }
 
@@ -78,7 +80,7 @@ void ControlLoop::switchOffIfNotAllowed()
 {
     // Not deferred to the next PID step: without samples there is no next PID step
     // (the Arduino firmware kept the last duty on the SSR in that case).
-    if ((standby_ || blocksHeating(faults_)) && heaterCounts_ != 0.0F) {
+    if ((standby_ || steam_.steaming() || blocksHeating(faults_)) && heaterCounts_ != 0.0F) {
         heaterCounts_ = 0.0F;
         heater_->write(0.0F);
         snapshot_.heaterCounts = 0.0F;
@@ -88,8 +90,15 @@ void ControlLoop::switchOffIfNotAllowed()
 void ControlLoop::controlHeating(Millis now)
 {
     const bool brewing = brew_.brewing();
+    const bool steaming = steam_.steaming();
 
-    if (!standby_ && !blocksHeating(faults_)) {
+    if (steaming) {
+        // The steam switch heats past the SSR up to the bimetal switch. Keep the SSR off (it would heat while
+        // the bimetal switch is open) and the PID frozen (above the target it only winds its integrator
+        // down).
+        heaterCounts_ = 0.0F;
+        pidStale_ = true;
+    } else if (!standby_ && !blocksHeating(faults_)) {
         if (brewing) {
             // Open loop while brewing: see BrewFeedForward
             if (!brewingPrev_) {
@@ -99,10 +108,11 @@ void ControlLoop::controlHeating(Millis now)
             heaterCounts_ = feedForward_.compute(pidSettings_.target, celsius_, now - lastFeedForward_);
             lastFeedForward_ = now;
         } else {
-            if (brewingPrev_) {
-                // Brewing ended: start the PID clean
+            if (brewingPrev_ || pidStale_) {
+                // Brewing or steam mode ended: start the PID clean
                 pid_.reset();
                 lastPid_ = now;
+                pidStale_ = false;
             }
             heaterCounts_ = pid_.compute(celsius_, now - lastPid_);
             lastPid_ = now;
@@ -110,7 +120,7 @@ void ControlLoop::controlHeating(Millis now)
     } else {
         heaterCounts_ = 0.0F;
     }
-    brewingPrev_ = brewing;
+    brewingPrev_ = brewing && !steaming; // brewing that outlasts steam mode starts the feed-forward fresh
     heater_->write(heaterCounts_);
 
     snapshot_.heaterCounts = heaterCounts_;

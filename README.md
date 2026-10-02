@@ -105,13 +105,46 @@ The settings page never shows the stored Wi-Fi password; leaving the field empty
 | Colour           | Meaning                                                  |
 |------------------|----------------------------------------------------------|
 | white            | booting                                                  |
-| orange, pulsing  | heating up (more than 1 K below the target)              |
-| green            | ready (within ±1 K of the target)                        |
-| blue, pulsing    | cooling down (more than 1 K above the target)            |
+| orange, pulsing  | heating up (more than `ReadyBand`, 1 K, below the target) |
+| green            | ready (within ±`ReadyBand` of the target)                |
+| blue, pulsing    | cooling down (more than `ReadyBand` above the target)    |
 | red              | brewing                                                  |
+| magenta, blinking | steam mode: heating up to the bimetal temperature       |
+| magenta          | steam mode: ready (119 °C reached)                       |
 | purple           | fault (heater off, except for a Wi-Fi fault)             |
 
-Pulsing = fading in and out once per 2 s. Brightness per colour: settings section `LED`.
+Pulsing = fading in and out once per 2 s, blinking = on/off once per second. Brightness per colour: settings
+section `LED` (magenta, Telekom #E20074, has no factor of its own; only the channel factors apply).
+
+### Steam mode
+
+There is no input for the steam switch: it bypasses the SSR and heats the boiler up to the bimetal switch
+(about 120 °C), which the PID never does. So the temperature alone decides:
+
+| Temperature                         | State                                              |
+|-------------------------------------|----------------------------------------------------|
+| rises to 105 °C                     | steam mode, heating up (magenta blinking)          |
+| reaches 119 °C                      | steam ready (magenta)                              |
+| falls below 115 °C                  | steam mode over: cooling down to the target (blue) |
+| reaches 119 °C again (bimetal)      | steam ready again                                  |
+| falls below 100 °C                  | steam detection armed again                        |
+
+In steam mode the SSR stays off and the PID is frozen; it starts clean afterwards.
+
+The temperatures are settings (section **Steam**, defaults as in the table above):
+
+| Key                      | Default | Meaning                                                           |
+|--------------------------|---------|-------------------------------------------------------------------|
+| `SteamDetectionActivate` | true    | steam detection on/off                                            |
+| `SteamEnterTemp`         | 105     | rising through it starts steam mode                               |
+| `SteamExitTemp`          | 100     | below it steam detection is armed again                           |
+| `SteamReadyTemp`         | 119     | steam ready                                                       |
+| `SteamReadyLeaveTemp`    | 115     | below it steam mode ends                                          |
+
+They must satisfy `SteamExitTemp < SteamEnterTemp < SteamReadyTemp` and
+`SteamExitTemp < SteamReadyLeaveTemp < SteamReadyTemp`; otherwise the update is rejected. Steam detection
+is off while the target is not below `SteamExitTemp` (logged as a warning). `PID` →
+`ReadyBand` (default 1 K) is the band around the target that counts as ready (green).
 
 ## Home Assistant (MQTT, optional)
 
@@ -126,6 +159,7 @@ The device appears in Home Assistant via MQTT discovery as **BananaCoffee** with
 | Temperature              | sensor        | °C                                                           |
 | Heater power             | sensor        | %                                                            |
 | Time to standby          | sensor        | min until standby (counted from boot, as before)            |
+| State                    | sensor (enum) | `heating_up`, `ready`, `cooling_down`, `brewing`, `steam_heating_up`, `steam_ready`, `fault` |
 | Brewing, Standby         | binary_sensor |                                                              |
 | Fault, Fault details     | binary_sensor, sensor | diagnostic                                           |
 | Wi-Fi signal             | sensor        | %, diagnostic                                                |

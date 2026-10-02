@@ -102,6 +102,32 @@ TEST(ConfigJson, MissingKeysUseBaseAndFlagIncomplete)
     EXPECT_FLOAT_EQ(parsed->config.pid.propFactor, 10.0F);
 }
 
+TEST(ConfigJson, SteamSettingsFromTheSettingsPage)
+{
+    // settings.html sends numbers as strings and booleans as booleans
+    const auto parsed = fromJson(R"({"PID": {"ReadyBand": "0.5"},
+        "Steam": {"SteamDetectionActivate": false, "SteamEnterTemp": "108", "SteamExitTemp": "102",
+                  "SteamReadyTemp": "121.5", "SteamReadyLeaveTemp": "117"}})",
+                                 Config{});
+    ASSERT_TRUE(parsed.has_value());
+    const Config& c = parsed->config;
+    EXPECT_FLOAT_EQ(c.pid.readyBand, 0.5F);
+    EXPECT_FALSE(c.steam.active);
+    EXPECT_FLOAT_EQ(c.steam.enter, 108.0F);
+    EXPECT_FLOAT_EQ(c.steam.exit, 102.0F);
+    EXPECT_FLOAT_EQ(c.steam.ready, 121.5F);
+    EXPECT_FLOAT_EQ(c.steam.readyLeave, 117.0F);
+}
+
+TEST(ConfigJson, FilesWithoutSteamSettingsGetTheDefaults)
+{
+    const auto parsed = fromJson(kArduinoFile); // has no "Steam" section and no "ReadyBand"
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_FALSE(parsed->complete); // written back with the defaults
+    EXPECT_EQ(parsed->config.steam, banana::config::SteamSettings{});
+    EXPECT_FLOAT_EQ(parsed->config.pid.readyBand, 1.0F);
+}
+
 TEST(ConfigJson, PartialUpdateKeepsCurrentValues)
 {
     Config current;
@@ -126,7 +152,9 @@ TEST(ConfigJson, WritesArduinoKeyNames)
     const std::string json = toJson(Config{});
     for (const char* key :
          {"\"wifiSSID\"", "\"HighTresholdValue\"", "\"PwmSsrResolution\"", "\"GainFactorColorWhite\"",
-          "\"SigFilterActive\"", "\"TimeToStandby\"", "\"BrewFfGain\""}) {
+          "\"SigFilterActive\"", "\"TimeToStandby\"", "\"BrewFfGain\"", "\"ReadyBand\"",
+          "\"SteamDetectionActivate\"", "\"SteamEnterTemp\"", "\"SteamExitTemp\"", "\"SteamReadyTemp\"",
+          "\"SteamReadyLeaveTemp\""}) {
         EXPECT_NE(json.find(key), std::string::npos) << key;
     }
 }

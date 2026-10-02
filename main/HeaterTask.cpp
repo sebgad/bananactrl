@@ -1,6 +1,7 @@
 #include "HeaterTask.hpp"
 
 #include <chrono>
+#include <string_view>
 
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -25,11 +26,37 @@ const char* faultState(control::Faults faults)
     return faults.none() ? "none" : "active";
 }
 
+const char* steamState(control::SteamState state)
+{
+    switch (state) {
+    case control::SteamState::Off:
+        return "off";
+    case control::SteamState::HeatingUp:
+        return "heating up";
+    case control::SteamState::Ready:
+        return "ready";
+    case control::SteamState::Cooldown:
+        return "ended, cooling down";
+    }
+    return "?";
+}
+
+void warnIfNoSteamDetection(const control::ControlLoop& loop)
+{
+    if (!loop.steamDetection()) {
+        ESP_LOGW(kTag, "target too high to detect steam mode: steam detection off");
+    }
+}
+
 void report(const control::ProcessSnapshot& before, const control::ProcessSnapshot& after)
 {
     // Logged on change only (the Arduino firmware repeated fault messages every 0.9 s)
     if (after.brewing != before.brewing) {
         ESP_LOGI(kTag, "brewing %s", after.brewing ? "started" : "stopped");
+    }
+    if (after.steam != before.steam) {
+        ESP_LOGI(kTag, "steam mode %s (T=%.2f C)", steamState(after.steam),
+                 static_cast<double>(after.celsius));
     }
     if (after.standby && !before.standby) {
         ESP_LOGW(kTag, "timeout reached -> heater off (standby)");
@@ -51,6 +78,7 @@ HeaterTask::HeaterTask(rtos::EventGroup& events, const Hardware& hardware, const
       loop_(*hardware.sensor, *hardware.ssr, *hardware.led, *hardware.network, config, nowMillis()),
       snapshot_(loop_.snapshot())
 {
+    warnIfNoSteamDetection(loop_);
 }
 
 void HeaterTask::requestConfig(const config::Config& config)
@@ -126,10 +154,11 @@ void HeaterTask::run()
             store(after);
         }
         if ((bits & kTick) != 0 && ++reportTicks_ % kReportEveryTicks == 0) {
-            ESP_LOGI(kTag, "T=%.2f C target=%.1f heater=%.1f counts brewing=%d standby=%d faults=0x%lX",
+            const std::string_view state = control::toString(after.state);
+            ESP_LOGI(kTag, "T=%.2f C target=%.1f heater=%.1f counts state=%.*s standby=%d faults=0x%lX",
                      static_cast<double>(after.celsius), static_cast<double>(after.target),
-                     static_cast<double>(after.heaterCounts), after.brewing, after.standby,
-                     static_cast<unsigned long>(after.faults.raw()));
+                     static_cast<double>(after.heaterCounts), static_cast<int>(state.size()), state.data(),
+                     after.standby, static_cast<unsigned long>(after.faults.raw()));
         }
         if (watchdog) {
             watchdog->feed();
@@ -179,6 +208,7 @@ void HeaterTask::applyPendingConfig()
     }
     loop_.applyConfig(*config);
     ESP_LOGI(kTag, "new configuration applied");
+    warnIfNoSteamDetection(loop_);
 }
 
 } // namespace banana

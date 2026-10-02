@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Steam mode, detected from the temperature (no input for the steam switch): from 105 °C the LED blinks
+  magenta (Telekom #E20074), from 119 °C it is steady magenta; below 115 °C steam mode ends and the LED shows
+  cooling down (blue). The SSR stays off and the PID is frozen while steaming.
+- Settings section `Steam` (detection on/off, the steam temperatures) and `PID` → `ReadyBand` (the ±1 K
+  around the target that counts as ready). `/paramUpdate` rejects thresholds in the wrong order. Stored
+  settings without these keys get the defaults.
+- Machine state (`heating_up`, `ready`, `cooling_down`, `brewing`, `steam_heating_up`, `steam_ready`,
+  `fault`) as Home Assistant enum sensor "State", as `State` in `/lastvalues.json` and in the log.
+
 ## [1.0.0-rc.4] - 2026-09-29
 
 ### Added

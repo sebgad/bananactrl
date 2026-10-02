@@ -7,7 +7,9 @@
 #include "banana/control/BrewDetector.hpp"
 #include "banana/control/BrewFeedForward.hpp"
 #include "banana/control/Diagnostics.hpp"
+#include "banana/control/MachineState.hpp"
 #include "banana/control/PidController.hpp"
+#include "banana/control/SteamStateMachine.hpp"
 #include "banana/io/Outputs.hpp"
 #include "banana/io/TemperatureSensor.hpp"
 
@@ -25,6 +27,8 @@ struct ProcessSnapshot {
     bool brewing = false;
     bool standby = false;
     Faults faults;
+    SteamState steam = SteamState::Off;
+    MachineState state = MachineState::HeatingUp;
 };
 
 /// The Arduino loop() without RTOS: the caller (HeaterTask) turns interrupts and timers into these calls.
@@ -32,6 +36,8 @@ struct ProcessSnapshot {
 /// - onSample(): every ADC conversion (8 SPS); every 3rd one also runs the heater control.
 /// - onTick(): every 450 ms; every 3rd one updates the LED, every 2nd one runs the diagnosis.
 /// - onPumpEdge() / pollBrew(): brew detection with 200 ms debounce.
+/// Steam mode is detected from the temperature on every sample (SteamStateMachine); while steaming the SSR
+/// stays off and the PID frozen.
 class ControlLoop {
 public:
     using Millis = std::chrono::milliseconds;
@@ -59,6 +65,8 @@ public:
         snapshot.brewing = brew_.brewing();
         snapshot.standby = standby_;
         snapshot.faults = faults_;
+        snapshot.steam = steam_.state();
+        snapshot.state = state();
         snapshot.heaterPercent =
             pidSettings_.highLimit != 0.0F ? snapshot.heaterCounts / pidSettings_.highLimit * 100.0F : 0.0F;
         snapshot.pidIntegrator = pid_.integrator();
@@ -67,6 +75,13 @@ public:
     }
     [[nodiscard]] Faults faults() const { return faults_; }
     [[nodiscard]] bool standby() const { return standby_; }
+    /// False if the target is too high to tell steam from brewing temperatures (see SteamStateMachine).
+    [[nodiscard]] bool steamDetection() const { return steam_.enabled(pidSettings_.target); }
+    [[nodiscard]] MachineState state() const
+    {
+        return machineState(faults_, brew_.brewing(), steam_.state(), celsius_, pidSettings_.target,
+                            pidSettings_.readyBand);
+    }
 
 private:
     void controlHeating(Millis now);
@@ -81,6 +96,7 @@ private:
     PidController pid_;
     BrewFeedForward feedForward_;
     BrewDetector brew_;
+    SteamStateMachine steam_;
     config::PidSettings pidSettings_;
     std::chrono::seconds timeToStandby_;
 
@@ -89,6 +105,7 @@ private:
     Millis lastFeedForward_{0};
     Millis lastSample_;
     bool brewingPrev_ = false;
+    bool pidStale_ = false; ///< steam mode froze the PID: reset it before the next PID step
     std::uint32_t samples_ = 0;
     std::uint32_t ticks_ = 0;
 

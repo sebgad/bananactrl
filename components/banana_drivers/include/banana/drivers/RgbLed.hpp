@@ -15,8 +15,8 @@
 namespace banana::drivers {
 
 /// Status RGB LED: three PWM channels on one LEDC timer, colour mixing and gains from LedSettings.
-/// LedEffect::Pulse fades the colour in and out with its own timer (every kPulseStep, only while pulsing).
-/// Thread-safe: the heater task sets the colour, the timer task animates it.
+/// LedEffect::Pulse and LedEffect::Blink animate the colour with their own timer (every kEffectStep, only
+/// while an effect runs). Thread-safe: the heater task sets the colour, the timer task animates it.
 class RgbLed final : public io::IStatusLed {
 public:
     struct Pins {
@@ -25,7 +25,7 @@ public:
         gpio_num_t blue;
     };
 
-    static constexpr std::chrono::milliseconds kPulseStep{20}; ///< 50 updates per second: smooth to the eye
+    static constexpr std::chrono::milliseconds kEffectStep{20}; ///< 50 updates per second: smooth to the eye
 
     [[nodiscard]] static Result<RgbLed> create(const Pins& pins, ledc_timer_t timer,
                                                std::array<ledc_channel_t, 3> channels,
@@ -46,7 +46,7 @@ private:
         }
 
         void write(float level); ///< mutex held
-        static void onPulse(void* arg);
+        static void onEffectStep(void* arg);
 
         std::mutex mutex;
         hal::LedcTimer timer;
@@ -55,10 +55,10 @@ private:
         io::LedColor color = io::LedColor::White;
         bool channelGains = true;
         io::LedEffect effect = io::LedEffect::Steady;
-        bool shown = false;            ///< a colour was set
-        std::int64_t pulseStartUs = 0; ///< esp_timer time the current pulse began
-        std::optional<hal::PeriodicTimer> pulseTimer;
-        bool pulsing = false;
+        bool shown = false;             ///< a colour was set
+        std::int64_t effectStartUs = 0; ///< esp_timer time the current effect began
+        std::optional<hal::PeriodicTimer> effectTimer;
+        bool animating = false;
     };
 
     explicit RgbLed(std::unique_ptr<State> state) : state_(std::move(state)) {}

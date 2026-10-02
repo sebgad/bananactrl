@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 /// Runtime configuration (`/fs/params.json`). Default member initialisers are the factory settings.
 namespace banana::config {
@@ -51,9 +52,23 @@ struct PidSettings {
     float lowLimit = 0.0F;    ///< SSR duty counts
     float highLimit = 255.0F; ///< SSR duty counts
 
+    float readyBand = 1.0F; ///< K; within target ± readyBand the machine is ready (LED green)
+
     BrewFeedForwardSettings brew;
 
     friend constexpr bool operator==(const PidSettings&, const PidSettings&) = default;
+};
+
+/// Steam mode, detected from the temperature alone (control::SteamStateMachine). °C. Detection is off for
+/// targets at or above `exit`: brewing temperatures must stay below the steam range.
+struct SteamSettings {
+    bool active = true;
+    float enter = 105.0F;      ///< rising through it starts steam mode
+    float exit = 100.0F;       ///< below it steam detection is armed again; upper limit for the target
+    float ready = 119.0F;      ///< steam ready (the bimetal switch opens at about 120 °C)
+    float readyLeave = 115.0F; ///< below it steam mode ends (brew mode, LED "cooling down")
+
+    friend constexpr bool operator==(const SteamSettings&, const SteamSettings&) = default;
 };
 
 struct SsrSettings {
@@ -118,6 +133,7 @@ struct MqttSettings {
 struct Config {
     WifiSettings wifi;
     PidSettings pid;
+    SteamSettings steam;
     SsrSettings ssr;
     LedSettings led;
     SignalSettings signal;
@@ -126,5 +142,25 @@ struct Config {
 
     friend bool operator==(const Config&, const Config&) = default;
 };
+
+/// Why `config` cannot be used (empty if it can): values the control would misbehave with.
+[[nodiscard]] constexpr std::string_view invalidSetting(const Config& config)
+{
+    // Written as !(a < b) so that NaN fails as well
+    const SteamSettings& steam = config.steam;
+    if (!(config.pid.readyBand > 0.0F)) {
+        return "ReadyBand must be greater than 0";
+    }
+    if (!(steam.exit < steam.enter)) {
+        return "SteamExitTemp must be below SteamEnterTemp";
+    }
+    if (!(steam.enter < steam.ready)) {
+        return "SteamEnterTemp must be below SteamReadyTemp";
+    }
+    if (!(steam.exit < steam.readyLeave) || !(steam.readyLeave < steam.ready)) {
+        return "SteamReadyLeaveTemp must be between SteamExitTemp and SteamReadyTemp";
+    }
+    return {};
+}
 
 } // namespace banana::config

@@ -40,12 +40,43 @@ TEST(Config, DefaultsMatchArduinoFactorySettings)
     EXPECT_EQ(c.system.timeToStandby.count(), 3600);
 }
 
+TEST(Config, SteamAndReadyBandDefaults)
+{
+    const Config c;
+    EXPECT_EQ(c.pid.readyBand, 1.0F);
+    EXPECT_TRUE(c.steam.active);
+    EXPECT_EQ(c.steam.enter, 105.0F);
+    EXPECT_EQ(c.steam.exit, 100.0F);
+    EXPECT_EQ(c.steam.ready, 119.0F);
+    EXPECT_EQ(c.steam.readyLeave, 115.0F);
+    EXPECT_TRUE(banana::config::invalidSetting(c).empty());
+}
+
+TEST(Config, InvalidSteamOrderOrReadyBandIsRejected)
+{
+    using banana::config::invalidSetting;
+    const auto withSteam = [](auto change) {
+        Config c;
+        change(c);
+        return invalidSetting(c);
+    };
+    EXPECT_FALSE(withSteam([](Config& c) { c.pid.readyBand = 0.0F; }).empty());
+    EXPECT_FALSE(withSteam([](Config& c) { c.steam.exit = 105.0F; }).empty());  // exit == enter
+    EXPECT_FALSE(withSteam([](Config& c) { c.steam.enter = 119.0F; }).empty()); // enter == ready
+    EXPECT_FALSE(withSteam([](Config& c) { c.steam.readyLeave = 119.5F; }).empty());
+    EXPECT_FALSE(withSteam([](Config& c) { c.steam.readyLeave = 99.0F; }).empty());
+    EXPECT_TRUE(withSteam([](Config& c) { c.steam.readyLeave = 104.0F; }).empty()); // below enter is fine
+}
+
 TEST(Config, EqualityComparesAllGroups)
 {
     Config a;
     Config b;
     EXPECT_EQ(a, b);
     b.led.colorGains.purple = 0.5F;
+    EXPECT_NE(a, b);
+    b = a;
+    b.steam.ready = 120.0F;
     EXPECT_NE(a, b);
 }
 

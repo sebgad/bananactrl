@@ -19,11 +19,20 @@ public:
     virtual void write(float counts) = 0;
 };
 
-enum class LedColor : std::uint8_t { Red, Green, Blue, Orange, Purple, White };
+enum class LedColor : std::uint8_t {
+    Red,
+    Green,
+    Blue,
+    Orange,
+    Purple,
+    White,
+    Magenta, ///< Telekom magenta (#E20074): steam mode
+};
 
 enum class LedEffect : std::uint8_t {
     Steady,
     Pulse, ///< fades in and out ("breathing")
+    Blink, ///< on and off
 };
 
 class IStatusLed {

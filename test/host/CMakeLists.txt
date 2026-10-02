@@ -60,6 +60,7 @@ add_executable(host_tests
     test_pid_controller.cpp
     test_release.cpp
     test_status.cpp
+    test_steam_state_machine.cpp
     test_tar_reader.cpp
     test_temperature_converters.cpp
     test_web.cpp)

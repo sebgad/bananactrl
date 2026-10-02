@@ -37,6 +37,9 @@ namespace banana::drivers {
     case io::LedColor::White:
         rgb = {100.0F * f.white, 100.0F * f.white, 100.0F * f.white};
         break;
+    case io::LedColor::Magenta: // #E20074, no colour gain of its own (not in params.json)
+        rgb = {226.0F, 0.0F, 116.0F};
+        break;
     }
     if (channelGains) {
         rgb[0] *= settings.channelGains.red;
@@ -66,6 +69,28 @@ inline constexpr float kPulseGamma = 2.2F;     ///< perceived brightness -> duty
     const float perceived =
         kPulseMinLevel + ((1.0F - kPulseMinLevel) * 0.5F * (1.0F + std::cos(kTwoPi * phase)));
     return std::pow(perceived, kPulseGamma);
+}
+
+/// Blink: on for the first half of each period, off for the second.
+inline constexpr std::chrono::milliseconds kBlinkPeriod{1000};
+
+[[nodiscard]] inline float blinkLevel(std::chrono::milliseconds elapsed)
+{
+    return elapsed % kBlinkPeriod < kBlinkPeriod / 2 ? 1.0F : 0.0F;
+}
+
+/// Duty factor 0..1 of `effect` at `elapsed` since it started.
+[[nodiscard]] inline float effectLevel(io::LedEffect effect, std::chrono::milliseconds elapsed)
+{
+    switch (effect) {
+    case io::LedEffect::Pulse:
+        return pulseLevel(elapsed);
+    case io::LedEffect::Blink:
+        return blinkLevel(elapsed);
+    case io::LedEffect::Steady:
+        break;
+    }
+    return 1.0F;
 }
 
 /// `counts` dimmed by `level` (0..1).

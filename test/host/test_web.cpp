@@ -79,6 +79,7 @@ TEST(LiveValues, ArduinoKeyNames)
     ASSERT_EQ(deserializeJson(doc, lastValuesJson(snapshot, 64)), DeserializationError::Ok);
     EXPECT_FLOAT_EQ(doc["Time"].as<float>(), 12.5F);
     EXPECT_FLOAT_EQ(doc["Temperature"].as<float>(), 84.25F);
+    EXPECT_EQ(doc["State"], "heating_up");
     EXPECT_FLOAT_EQ(doc["PID"]["TargetValue"].as<float>(), 85.0F);
     EXPECT_FLOAT_EQ(doc["PID"]["TargetPWM"].as<float>(), 31.25F);
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorIntegrator"].as<float>(), 1.5F);

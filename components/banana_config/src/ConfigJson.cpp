@@ -60,6 +60,14 @@ std::string toJson(const Config& c)
     pid["BrewFfEnd"] = c.pid.brew.end;
     pid["BrewFfTau"] = c.pid.brew.tau.count();
     pid["BrewFfGain"] = c.pid.brew.gain;
+    pid["ReadyBand"] = c.pid.readyBand;
+
+    JsonObject steam = doc["Steam"].to<JsonObject>();
+    steam["SteamDetectionActivate"] = c.steam.active;
+    steam["SteamEnterTemp"] = c.steam.enter;
+    steam["SteamExitTemp"] = c.steam.exit;
+    steam["SteamReadyTemp"] = c.steam.ready;
+    steam["SteamReadyLeaveTemp"] = c.steam.readyLeave;
 
     doc["SSR"]["SsrFreq"] = c.ssr.frequencyHz;
     doc["SSR"]["PwmSsrResolution"] = c.ssr.resolutionBits;
@@ -127,6 +135,14 @@ Result<ParsedConfig> fromJson(std::string_view json, const Config& base)
     read(pid, "BrewFfEnd", c.pid.brew.end, ok);
     read(pid, "BrewFfTau", c.pid.brew.tau, ok);
     read(pid, "BrewFfGain", c.pid.brew.gain, ok);
+    read(pid, "ReadyBand", c.pid.readyBand, ok);
+
+    const JsonVariantConst steam = doc["Steam"];
+    read(steam, "SteamDetectionActivate", c.steam.active, ok);
+    read(steam, "SteamEnterTemp", c.steam.enter, ok);
+    read(steam, "SteamExitTemp", c.steam.exit, ok);
+    read(steam, "SteamReadyTemp", c.steam.ready, ok);
+    read(steam, "SteamReadyLeaveTemp", c.steam.readyLeave, ok);
 
     const JsonVariantConst ssr = doc["SSR"];
     read(ssr, "SsrFreq", c.ssr.frequencyHz, ok);

@@ -28,11 +28,11 @@ Result<RgbLed> RgbLed::create(const Pins& pins, ledc_timer_t timer, std::array<l
     }
     auto state = std::make_unique<State>(
         std::move(*ledcTimer), std::array{std::move(*red), std::move(*green), std::move(*blue)}, settings);
-    auto pulseTimer = hal::PeriodicTimer::create("led_pulse", &State::onPulse, state.get());
-    if (!pulseTimer) {
-        return fail(pulseTimer.error());
+    auto effectTimer = hal::PeriodicTimer::create("led_effect", &State::onEffectStep, state.get());
+    if (!effectTimer) {
+        return fail(effectTimer.error());
     }
-    state->pulseTimer.emplace(std::move(*pulseTimer));
+    state->effectTimer.emplace(std::move(*effectTimer));
     return RgbLed{std::move(state)};
 }
 
@@ -43,8 +43,8 @@ Result<void> RgbLed::configure(const config::LedSettings& settings)
         return res;
     }
     state_->settings = settings;
-    if (state_->shown && !state_->pulsing) {
-        state_->write(1.0F); // new gains for a steady colour (a pulse picks them up at its next step)
+    if (state_->shown && !state_->animating) {
+        state_->write(1.0F); // new gains for a steady colour (an effect picks them up at its next step)
     }
     return {};
 }
@@ -54,23 +54,23 @@ void RgbLed::show(io::LedColor color, bool channelGains, io::LedEffect effect)
     State& s = *state_;
     const std::scoped_lock lock{s.mutex};
     if (s.shown && color == s.color && channelGains == s.channelGains && effect == s.effect) {
-        return; // repeated every 1.35 s by the heater task: keep a running pulse in phase
+        return; // repeated every 1.35 s by the heater task: keep a running effect in phase
     }
     s.color = color;
     s.channelGains = channelGains;
     s.effect = effect;
     s.shown = true;
 
-    if (effect == io::LedEffect::Pulse) {
-        s.pulseStartUs = esp_timer_get_time();
+    if (effect != io::LedEffect::Steady) {
+        s.effectStartUs = esp_timer_get_time();
         s.write(1.0F);
-        if (!s.pulsing && s.pulseTimer && s.pulseTimer->start(kPulseStep)) {
-            s.pulsing = true;
+        if (!s.animating && s.effectTimer && s.effectTimer->start(kEffectStep)) {
+            s.animating = true;
         }
     } else {
-        if (s.pulsing && s.pulseTimer) {
-            s.pulseTimer->stop();
-            s.pulsing = false;
+        if (s.animating && s.effectTimer) {
+            s.effectTimer->stop();
+            s.animating = false;
         }
         s.write(1.0F);
     }
@@ -84,15 +84,15 @@ void RgbLed::State::write(float level)
     }
 }
 
-void RgbLed::State::onPulse(void* arg)
+void RgbLed::State::onEffectStep(void* arg)
 {
     auto* self = static_cast<State*>(arg);
     const std::scoped_lock lock{self->mutex};
-    if (self->effect != io::LedEffect::Pulse) {
+    if (self->effect == io::LedEffect::Steady) {
         return; // stopped meanwhile
     }
-    const auto elapsed = std::chrono::milliseconds{(esp_timer_get_time() - self->pulseStartUs) / 1000};
-    self->write(pulseLevel(elapsed));
+    const auto elapsed = std::chrono::milliseconds{(esp_timer_get_time() - self->effectStartUs) / 1000};
+    self->write(effectLevel(self->effect, elapsed));
 }
 
 } // namespace banana::drivers

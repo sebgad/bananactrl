@@ -16,9 +16,18 @@ using banana::control::Fault;
 using banana::control::Faults;
 using banana::control::indicate;
 using banana::control::LedCommand;
+using banana::control::machineState;
+using banana::control::MachineState;
+using banana::control::SteamState;
 using banana::drivers::rgbCounts;
 using banana::io::LedColor;
 using banana::io::LedEffect;
+
+/// The LED of the Arduino firmware's LED_CTRL block, with steam mode off.
+LedCommand indicate(Faults faults, bool brewing, float celsius, float target)
+{
+    return banana::control::indicate(machineState(faults, brewing, SteamState::Off, celsius, target, 1.0F));
+}
 
 TEST(StatusIndicator, Priorities)
 {
@@ -29,6 +38,39 @@ TEST(StatusIndicator, Priorities)
     EXPECT_EQ(indicate({}, false, 84.0F, 85.0F), (LedCommand{LedColor::Green, true}));
     EXPECT_EQ(indicate({}, false, 86.0F, 85.0F), (LedCommand{LedColor::Green, true}));
     EXPECT_EQ(indicate({}, false, 86.1F, 85.0F), (LedCommand{LedColor::Blue, true, LedEffect::Pulse}));
+}
+
+TEST(MachineState, SteamBetweenBrewingAndTemperature)
+{
+    EXPECT_EQ(machineState(Faults{Fault::TempOutOfRange}, true, SteamState::Ready, 120.0F, 85.0F, 1.0F),
+              MachineState::Fault);
+    EXPECT_EQ(machineState({}, true, SteamState::Ready, 120.0F, 85.0F, 1.0F), MachineState::Brewing);
+    EXPECT_EQ(machineState({}, false, SteamState::HeatingUp, 110.0F, 85.0F, 1.0F),
+              MachineState::SteamHeatingUp);
+    EXPECT_EQ(machineState({}, false, SteamState::Ready, 120.0F, 85.0F, 1.0F), MachineState::SteamReady);
+    // After steam mode the temperature decides again
+    EXPECT_EQ(machineState({}, false, SteamState::Cooldown, 114.0F, 85.0F, 1.0F), MachineState::CoolingDown);
+}
+
+TEST(StatusIndicator, SteamIsMagenta)
+{
+    EXPECT_EQ(banana::control::indicate(MachineState::SteamHeatingUp),
+              (LedCommand{LedColor::Magenta, true, LedEffect::Blink}));
+    EXPECT_EQ(banana::control::indicate(MachineState::SteamReady), (LedCommand{LedColor::Magenta, true}));
+}
+
+TEST(MachineState, NamesAreUnique)
+{
+    using banana::control::kMachineStateCount;
+    using banana::control::toString;
+    for (std::size_t i = 0; i < kMachineStateCount; ++i) {
+        const auto name = toString(static_cast<MachineState>(i));
+        EXPECT_NE(name, "unknown");
+        for (std::size_t j = 0; j < i; ++j) {
+            EXPECT_NE(name, toString(static_cast<MachineState>(j)));
+        }
+    }
+    EXPECT_EQ(toString(static_cast<MachineState>(kMachineStateCount)), "unknown"); // count is complete
 }
 
 TEST(Diagnostics, Inputs)
@@ -73,6 +115,7 @@ TEST(RgbCounts, FactoryColors)
     EXPECT_EQ(rgbCounts(LedColor::Orange, true, led), (Rgb{255, 10, 0}));
     EXPECT_EQ(rgbCounts(LedColor::Purple, false, led), (Rgb{170, 0, 255}));
     EXPECT_EQ(rgbCounts(LedColor::White, true, led), (Rgb{100, 100, 100}));
+    EXPECT_EQ(rgbCounts(LedColor::Magenta, true, led), (Rgb{226, 0, 116})); // Telekom magenta #E20074
 }
 
 TEST(RgbCounts, GainsSaturationAndResolution)
@@ -112,6 +155,19 @@ TEST(LedPulse, BreathesOncePerPeriod)
         previous = level;
     }
     EXPECT_NEAR(pulseLevel(kPulsePeriod / 4), pulseLevel(kPulsePeriod * 3 / 4), 1e-5F); // symmetric
+}
+
+TEST(LedBlink, HalfOnHalfOff)
+{
+    using banana::drivers::effectLevel;
+    using banana::drivers::kBlinkPeriod;
+    EXPECT_EQ(effectLevel(LedEffect::Blink, 0ms), 1.0F);
+    EXPECT_EQ(effectLevel(LedEffect::Blink, kBlinkPeriod / 2 - 1ms), 1.0F);
+    EXPECT_EQ(effectLevel(LedEffect::Blink, kBlinkPeriod / 2), 0.0F);
+    EXPECT_EQ(effectLevel(LedEffect::Blink, kBlinkPeriod - 1ms), 0.0F);
+    EXPECT_EQ(effectLevel(LedEffect::Blink, kBlinkPeriod), 1.0F);
+    EXPECT_EQ(effectLevel(LedEffect::Steady, kBlinkPeriod / 2), 1.0F);
+    EXPECT_EQ(effectLevel(LedEffect::Pulse, 300ms), banana::drivers::pulseLevel(300ms));
 }
 
 TEST(LedPulse, DimmedCounts)

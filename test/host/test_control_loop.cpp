@@ -237,6 +237,101 @@ TEST(ControlLoop, BrewingUsesFeedForwardAndResetsPidAfterwards)
     EXPECT_NE(firstAfter, writes.rend());
 }
 
+TEST(ControlLoop, SteamModeKeepsHeaterOffAndFreezesPid)
+{
+    using banana::control::MachineState;
+    using banana::control::SteamState;
+    using banana::io::LedEffect;
+    Bench bench;
+    bench.sensor.celsius = 80.0F;
+    bench.run(5s);
+    EXPECT_GT(bench.heater.last(), 0.0F);
+    const float integrator = bench.loop.snapshot().pidIntegrator;
+
+    // The steam switch heats past the SSR: above 105 °C with the PID at 0
+    bench.sensor.celsius = 110.0F;
+    bench.run(1350ms);
+    EXPECT_EQ(bench.loop.snapshot().steam, SteamState::HeatingUp);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::SteamHeatingUp);
+    EXPECT_FLOAT_EQ(bench.heater.last(), 0.0F);
+    EXPECT_EQ(bench.led.color, LedColor::Magenta);
+    EXPECT_EQ(bench.led.effect, LedEffect::Blink);
+
+    bench.sensor.celsius = 120.0F;
+    bench.run(60s);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::SteamReady);
+    EXPECT_EQ(bench.led.color, LedColor::Magenta);
+    EXPECT_EQ(bench.led.effect, LedEffect::Steady);
+    EXPECT_TRUE(std::ranges::all_of(bench.heater.writes.end() - 100, bench.heater.writes.end(),
+                                    [](float w) { return w == 0.0F; }));
+    EXPECT_FLOAT_EQ(bench.loop.snapshot().pidIntegrator, integrator); // frozen, not wound down
+
+    // Below 115 °C: steam mode over, cooling down to the target
+    bench.sensor.celsius = 114.0F;
+    bench.run(1350ms);
+    EXPECT_EQ(bench.loop.snapshot().steam, SteamState::Cooldown);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::CoolingDown);
+    EXPECT_EQ(bench.led.color, LedColor::Blue);
+    EXPECT_EQ(bench.led.effect, LedEffect::Pulse);
+}
+
+TEST(ControlLoop, PidStartsCleanAfterSteamMode)
+{
+    Bench bench;
+    bench.sensor.celsius = 80.0F;
+    bench.run(30s); // integrator charged
+    ASSERT_NE(bench.loop.snapshot().pidIntegrator, 0.0F);
+    bench.sensor.celsius = 120.0F;
+    bench.run(5s);
+    ASSERT_TRUE(bench.loop.snapshot().steam == banana::control::SteamState::Ready);
+
+    bench.sensor.celsius = 84.0F; // e.g. after a long cool-down
+    bench.run(450ms);
+    EXPECT_EQ(bench.loop.snapshot().steam, banana::control::SteamState::Off);
+    // First PID step after steam mode: reset and zero elapsed time -> only P: 10 * (85 - 84)
+    const auto& writes = bench.heater.writes;
+    EXPECT_NE(std::ranges::find(writes.end() - 2, writes.end(), 10.0F), writes.end());
+}
+
+TEST(ControlLoop, NoSteamDetectionForHighTargets)
+{
+    banana::config::Config config;
+    config.pid.target = 101.0F;
+    Bench bench{config};
+    EXPECT_FALSE(bench.loop.steamDetection());
+    bench.sensor.celsius = 110.0F;
+    bench.run(2s);
+    EXPECT_EQ(bench.loop.snapshot().steam, banana::control::SteamState::Off);
+    EXPECT_EQ(bench.loop.snapshot().state, banana::control::MachineState::CoolingDown);
+}
+
+TEST(ControlLoop, SteamAndReadyBandFromTheSettings)
+{
+    using banana::control::MachineState;
+    Bench bench;
+    bench.sensor.celsius = 110.0F;
+    bench.run(450ms);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::SteamHeatingUp);
+
+    banana::config::Config config;
+    config.steam.active = false;
+    config.pid.readyBand = 30.0F;
+    bench.loop.applyConfig(config);
+    bench.run(450ms);
+    EXPECT_FALSE(bench.loop.steamDetection());
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::Ready); // 110 °C is within 85 ± 30 K
+    EXPECT_GT(bench.heater.writes.size(), 0U);
+
+    config.steam = {.enter = 115.0F, .exit = 105.0F, .ready = 125.0F, .readyLeave = 120.0F};
+    config.pid.readyBand = 1.0F;
+    bench.loop.applyConfig(config);
+    bench.run(450ms);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::CoolingDown); // below the new enter threshold
+    bench.sensor.celsius = 116.0F;
+    bench.run(450ms);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::SteamHeatingUp);
+}
+
 TEST(ControlLoop, PumpGlitchInsideDebounceIsIgnored)
 {
     Bench bench;

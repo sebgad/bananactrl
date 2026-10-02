@@ -1,6 +1,6 @@
 #pragma once
 
-#include "banana/control/Diagnostics.hpp"
+#include "banana/control/MachineState.hpp"
 #include "banana/io/Outputs.hpp"
 
 namespace banana::control {
@@ -14,24 +14,28 @@ struct LedCommand {
 };
 
 /// Which colour when (LED_CTRL block of the Arduino loop()):
-/// fault → purple (no gains), brewing → red, more than 1 K below target → orange (heating up),
-/// more than 1 K above → blue (cooling down), otherwise green. Heating up and cooling down pulse (not in the
-/// Arduino firmware), so "on its way" and "ready" differ at a glance.
-[[nodiscard]] constexpr LedCommand indicate(Faults faults, bool brewing, float celsius, float target)
+/// fault → purple (no gains), brewing → red, heating up → orange, cooling down → blue, ready → green.
+/// Heating up and cooling down pulse (not in the Arduino firmware), so "on its way" and "ready" differ at a
+/// glance. Steam mode (not in the Arduino firmware): magenta, blinking while heating up, steady when ready.
+[[nodiscard]] constexpr LedCommand indicate(MachineState state)
 {
-    if (faults.any()) {
+    switch (state) {
+    case MachineState::Fault:
         return {.color = io::LedColor::Purple, .channelGains = false};
+    case MachineState::Brewing:
+        return {.color = io::LedColor::Red};
+    case MachineState::SteamHeatingUp:
+        return {.color = io::LedColor::Magenta, .effect = io::LedEffect::Blink};
+    case MachineState::SteamReady:
+        return {.color = io::LedColor::Magenta};
+    case MachineState::HeatingUp:
+        return {.color = io::LedColor::Orange, .effect = io::LedEffect::Pulse};
+    case MachineState::CoolingDown:
+        return {.color = io::LedColor::Blue, .effect = io::LedEffect::Pulse};
+    case MachineState::Ready:
+        return {.color = io::LedColor::Green};
     }
-    if (brewing) {
-        return {.color = io::LedColor::Red, .channelGains = true};
-    }
-    if (celsius < target - 1.0F) {
-        return {.color = io::LedColor::Orange, .channelGains = true, .effect = io::LedEffect::Pulse};
-    }
-    if (celsius > target + 1.0F) {
-        return {.color = io::LedColor::Blue, .channelGains = true, .effect = io::LedEffect::Pulse};
-    }
-    return {.color = io::LedColor::Green, .channelGains = true};
+    return {.color = io::LedColor::Purple, .channelGains = false};
 }
 
 } // namespace banana::control

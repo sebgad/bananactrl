@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 
 #include <ArduinoJson.h>
@@ -158,6 +159,16 @@ std::vector<Message> discoveryMessages(const Device& device, const Topics& topic
         messages.push_back(message("binary_sensor", device, "brewing", doc));
     }
     {
+        JsonDocument doc = stateEntity(device, topics, "state", "State");
+        doc["device_class"] = "enum";
+        doc["icon"] = "mdi:coffee-maker";
+        JsonArray options = doc["options"].to<JsonArray>();
+        for (std::size_t i = 0; i < control::kMachineStateCount; ++i) {
+            options.add(control::toString(static_cast<control::MachineState>(i)));
+        }
+        messages.push_back(message("sensor", device, "state", doc));
+    }
+    {
         JsonDocument doc = stateEntity(device, topics, "standby", "Standby");
         doc["icon"] = "mdi:sleep";
         messages.push_back(message("binary_sensor", device, "standby", doc));
@@ -227,6 +238,7 @@ std::string statePayload(const control::ProcessSnapshot& snapshot, const config:
     doc["heater"] = std::round(snapshot.heaterPercent * 10.0F) / 10.0F;
     doc["target"] = snapshot.target;
     doc["brewing"] = snapshot.brewing ? "ON" : "OFF";
+    doc["state"] = control::toString(snapshot.state);
     doc["standby"] = snapshot.standby ? "ON" : "OFF";
     doc["fault"] = snapshot.faults.none() ? "OFF" : "ON";
     doc["faults"] = faultText(snapshot.faults);

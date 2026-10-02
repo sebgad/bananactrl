@@ -1,6 +1,8 @@
 #include "banana/web/ApiRoutes.hpp"
 
 #include <chrono>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "esp_app_desc.h"
@@ -69,17 +71,27 @@ esp_err_t ApiRoutes::paramUpdate(HttpRequest& request)
     }
     config::Config before;
     bool valid = true;
+    std::string_view invalid;
     auto updated = store_->update([&](config::Config& config) {
         before = config;
         auto merged = config::applyWebUpdate(*body, config);
         valid = merged.has_value();
         if (valid) {
-            config = std::move(*merged);
+            invalid = config::invalidSetting(*merged);
         }
-        return valid;
+        if (!valid || !invalid.empty()) {
+            return false;
+        }
+        config = std::move(*merged);
+        return true;
     });
     if (!valid) {
         return request.sendText(Status::BadRequest, "Parameters are not updated: invalid JSON");
+    }
+    if (!invalid.empty()) {
+        std::string message{"Parameters are not updated: "};
+        message += invalid;
+        return request.sendText(Status::BadRequest, message);
     }
     if (!updated) {
         ESP_LOGE(kTag, "saving parameters failed: %s", esp_err_to_name(updated.error()));

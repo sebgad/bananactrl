@@ -28,9 +28,10 @@ TEST(HomeAssistant, DiscoveryMessages)
 {
     const Topics topics{kDevice.id};
     const auto messages = discoveryMessages(kDevice, topics);
-    EXPECT_EQ(messages.size(), 11U);
+    EXPECT_EQ(messages.size(), 12U);
 
     bool foundTarget = false;
+    bool foundState = false;
     for (const Message& message : messages) {
         EXPECT_TRUE(message.topic.starts_with("homeassistant/")) << message.topic;
         EXPECT_TRUE(message.topic.ends_with("/config")) << message.topic;
@@ -47,8 +48,15 @@ TEST(HomeAssistant, DiscoveryMessages)
             EXPECT_EQ(doc["max"].as<float>(), kTargetMax);
             EXPECT_EQ(doc["value_template"], "{{ value_json.target }}");
         }
+        if (message.topic == "homeassistant/sensor/bananactrl_3068b0/state/config") {
+            foundState = true;
+            EXPECT_EQ(doc["device_class"], "enum");
+            EXPECT_EQ(doc["options"].size(), banana::control::kMachineStateCount);
+            EXPECT_EQ(doc["options"][5], "steam_ready");
+        }
     }
     EXPECT_TRUE(foundTarget);
+    EXPECT_TRUE(foundState);
 }
 
 TEST(HomeAssistant, StatePayload)
@@ -59,6 +67,7 @@ TEST(HomeAssistant, StatePayload)
     snapshot.heaterPercent = 13.26F;
     snapshot.target = 83.0F;
     snapshot.brewing = true;
+    snapshot.state = banana::control::MachineState::SteamReady;
     snapshot.faults.set(banana::control::Fault::WifiDisconnect);
     Config config;
     config.system.timeToStandby = std::chrono::seconds{7200};
@@ -69,6 +78,7 @@ TEST(HomeAssistant, StatePayload)
     EXPECT_FLOAT_EQ(doc["heater"].as<float>(), 13.3F);
     EXPECT_FLOAT_EQ(doc["target"].as<float>(), 83.0F);
     EXPECT_EQ(doc["brewing"], "ON");
+    EXPECT_EQ(doc["state"], "steam_ready");
     EXPECT_EQ(doc["standby"], "OFF");
     EXPECT_EQ(doc["fault"], "ON");
     EXPECT_EQ(doc["faults"], "Wi-Fi disconnected");
