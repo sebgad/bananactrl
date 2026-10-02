@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-10-02
+
+### Added
+- [docs/FEATURES.md](docs/FEATURES.md): feature overview with screenshots of the web UI.
+- [docs/CALIBRATION.md](docs/CALIBRATION.md): every setting explained, with charts (simulations with the
+  firmware's controller on a boiler model fitted to measurements, and a measured steam session).
+
+### Fixed
+- Graphs page: the temperature axis grows beyond 100 °C, so steam mode (up to about 125 °C) is no longer
+  cut off.
+
 ## [1.0.0-rc.5] - 2026-10-02
 
 ### Added
@@ -65,7 +76,8 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.5...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.6...HEAD
+[1.0.0-rc.6]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.2...v1.0.0-rc.3
