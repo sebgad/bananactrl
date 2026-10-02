@@ -5,6 +5,11 @@ ADS1115, PID-controlled SSR, RGB status LED, web UI with graphs, settings and OT
 ESP-IDF v6.1 port of the Arduino firmware `coffee_ctrl_main`; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for components, tasks, data flow and the differences from the Arduino firmware.
 
+**Features and screenshots of the web UI: [docs/FEATURES.md](docs/FEATURES.md). What every setting does, with
+charts: [docs/CALIBRATION.md](docs/CALIBRATION.md).**
+
+![Dashboard](docs/images/webui-dashboard.png)
+
 ## Build
 
 ```sh

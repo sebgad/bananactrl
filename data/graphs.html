@@ -51,7 +51,9 @@
       const options = {
         title: "Temperature and Target PWM",
         ...chartSize(),
-        scales: {x: {time: false}, temp: {range: [0, 100]}, pwm: {range: [0, 100]}},
+        scales: {x: {time: false}, pwm: {range: [0, 100]},
+                 // 0..100 °C, more in steam mode (up to about 125 °C)
+                 temp: {range: (u, min, max) => [0, Math.max(100, Math.ceil((max || 0) / 10) * 10)]}},
         axes: [
           {...axis, label: "Time (s)"},
           {...axis, scale: "temp", label: "Temperature (\u00b0C)"},

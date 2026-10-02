@@ -6,6 +6,8 @@ OTA, log), optional MQTT with Home Assistant discovery. It is an ESP-IDF v6.1 / 
 firmware `coffee_ctrl_main`; behaviour, web UI, `params.json` and `data.csv` stay compatible with it.
 
 Further reading: [README.md](README.md) (build, flash, settings, MQTT, releases),
+[docs/FEATURES.md](docs/FEATURES.md) (user-facing feature overview with web UI screenshots in `docs/images/`),
+[docs/CALIBRATION.md](docs/CALIBRATION.md) (every setting explained, charts in `docs/images/calibration/`),
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (component graph, tasks, data flow, deliberate differences
 from the Arduino firmware, hardware and bench notes). Read the differences before changing control, settings
 or recording behaviour.
