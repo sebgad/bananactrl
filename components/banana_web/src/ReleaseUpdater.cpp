@@ -322,13 +322,16 @@ Result<void> ReleaseUpdater::installRelease(const Release& release)
         status_.total = firmware.size + (release.webUi ? release.webUi->size : 0);
     }
 
-    // Checksums first: nothing is written without them
-    auto sumsHttp =
-        net::HttpClient::get({.url = release.md5sums->url.c_str(), .userAgent = userAgent_.c_str()});
-    if (!sumsHttp) {
-        return fail(sumsHttp.error());
-    }
-    const auto sums = sumsHttp->readAll(kMaxMd5SumsBytes);
+    // Checksums first: nothing is written without them. The connection closes before the next one opens
+    // (sockets are scarce: httpd sessions and MQTT share CONFIG_LWIP_MAX_SOCKETS).
+    const auto sums = [&]() -> Result<std::string> {
+        auto sumsHttp =
+            net::HttpClient::get({.url = release.md5sums->url.c_str(), .userAgent = userAgent_.c_str()});
+        if (!sumsHttp) {
+            return fail(sumsHttp.error());
+        }
+        return sumsHttp->readAll(kMaxMd5SumsBytes);
+    }();
     if (!sums) {
         return fail(sums.error());
     }

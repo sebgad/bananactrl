@@ -21,3 +21,7 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # The boot code (App constructor: config JSON parsing with several Config copies) runs in the main task.
 # 3584 overflowed once the MQTT settings were added; the task ends after App::run(), its stack is freed.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Sockets: httpd (up to 7 sessions + listen + control), MQTT and the release updater (HTTPS) share this pool.
+# 10 ran out while a browser held its keep-alive sessions and an update downloaded from GitHub.
+CONFIG_LWIP_MAX_SOCKETS=16
