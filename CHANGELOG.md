@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-12
+
+First stable release, no changes since 1.0.0-rc.7. Summary of the release candidates:
+
+### Added
+- ESP-IDF v6.1 / C++ port of the Arduino firmware `coffee_ctrl_main`: Pt1000 via ADS1115, PID-controlled
+  SSR, RGB status LED, measurement recording (`data.csv`) and logging. Web UI, `params.json` and `data.csv`
+  stay compatible (differences: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
+- Web UI with dashboard widgets and uPlot trends, graphs, settings, update and log pages, automatic dark
+  mode; live data via server-sent events, works offline (SoftAP).
+- Steam mode: detected from the temperature, or switched in software (dashboard, Home Assistant,
+  `POST /steam`) with its own PID target and factors and an automatic timeout.
+- Machine state (`heating_up`, `ready`, `cooling_down`, `brewing`, `steam_heating_up`, `steam_ready`,
+  `fault`) in `/lastvalues.json`, the log and Home Assistant.
+- Optional MQTT service with Home Assistant discovery.
+- Updates: install GitHub releases (optionally pre-releases) from the OTA page, or upload firmware,
+  `MD5SUMS` and the web UI archive; verified by MD5, with rollback if the new firmware does not start.
+- Firmware version from git tags (web UI footer, `/version.json`); GitHub Actions for builds, host tests
+  and releases.
+- Documentation: [docs/FEATURES.md](docs/FEATURES.md) and [docs/CALIBRATION.md](docs/CALIBRATION.md).
+
 ## [1.0.0-rc.7] - 2026-10-12
 
 ### Added
@@ -90,7 +111,8 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.7...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.7...v1.0.0
 [1.0.0-rc.7]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.4...v1.0.0-rc.5
