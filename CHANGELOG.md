@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0-rc.7] - 2026-10-12
+
 ### Added
 - Software steam switch: the **Steam** button on the dashboard, the Home Assistant switch "Steam mode" or
   `POST /steam` (`on` / `off`) let the PID heat to `SteamPidTarget` (default 120 °C, no thresholds). It turns
@@ -88,7 +90,8 @@ All notable changes to this project are documented here. The format follows
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.6...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.7...HEAD
+[1.0.0-rc.7]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.3...v1.0.0-rc.4
