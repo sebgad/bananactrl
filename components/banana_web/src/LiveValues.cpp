@@ -13,6 +13,8 @@ std::string lastValuesJson(const control::ProcessSnapshot& snapshot, int wifiPer
     doc["Time"] = snapshot.seconds;
     doc["Temperature"] = snapshot.celsius;
     doc["State"] = control::toString(snapshot.state); // not in the Arduino firmware
+    doc["SteamMode"] = snapshot.steamMode;            // software steam switch, also new
+    doc["SteamRemaining"] = static_cast<int>(snapshot.steamRemaining);
 
     JsonObject pid = doc["PID"].to<JsonObject>();
     pid["TargetValue"] = snapshot.target;

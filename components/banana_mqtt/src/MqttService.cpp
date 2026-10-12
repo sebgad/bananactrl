@@ -203,7 +203,7 @@ void MqttService::onConnected(esp_mqtt_client_handle_t client)
 {
     esp_mqtt_client_enqueue(client, availabilityTopic_.c_str(), kOnline, 0, 1, 1, true);
     publishDiscovery(client);
-    for (const Command command : {Command::Target, Command::StandbyTime, Command::Restart}) {
+    for (const Command command : kCommands) {
         esp_mqtt_client_subscribe_single(client, topics_.command(command).c_str(), 1);
     }
     esp_mqtt_client_subscribe_single(client, std::string{kHomeAssistantStatusTopic}.c_str(), 1);
@@ -238,6 +238,13 @@ void MqttService::onData(esp_mqtt_client_handle_t client, std::string_view topic
         esp_mqtt_client_publish(client, availabilityTopic_.c_str(), kOffline, 0, 1, 1);
         rtos::restartAfter(kRestartDelay);
     }
+    if (*command == Command::SteamMode) {
+        if (const auto on = parseSwitch(payload)) {
+            ESP_LOGI(kTag, "via MQTT: steam mode %s", *on ? "on" : "off");
+            deps_.heater->requestSteamMode(*on); // the next state message shows the result
+        }
+        return;
+    }
     // The store notifies the heater task (and this service) after saving
     auto updated =
         deps_.store->update([&](config::Config& config) { return applyCommand(*command, payload, config); });
@@ -245,8 +252,8 @@ void MqttService::onData(esp_mqtt_client_handle_t client, std::string_view topic
         ESP_LOGW(kTag, "command %.*s = '%.*s' not applied: %s", static_cast<int>(topic.size()), topic.data(),
                  static_cast<int>(payload.size()), payload.data(), esp_err_to_name(updated.error()));
     } else {
-        ESP_LOGI(kTag, "via MQTT: target %.1f C, standby after %lld min",
-                 static_cast<double>(updated->pid.target),
+        ESP_LOGI(kTag, "via MQTT: target %.1f C, steam target %.1f C, standby after %lld min",
+                 static_cast<double>(updated->pid.target), static_cast<double>(updated->steam.pidTarget),
                  static_cast<long long>(updated->system.timeToStandby.count() / 60));
     }
     publishState(client); // new value, or the unchanged one again

@@ -151,6 +151,31 @@ They must satisfy `SteamExitTemp < SteamEnterTemp < SteamReadyTemp` and
 is off while the target is not below `SteamExitTemp` (logged as a warning). `PID` →
 `ReadyBand` (default 1 K) is the band around the target that counts as ready (green).
 
+#### Software steam switch
+
+Instead of the hardware steam switch, the PID itself can heat to a steam temperature: the **Steam** button on
+the dashboard, the Home Assistant switch "Steam mode" or `POST /steam` with the body `on` / `off`. This needs
+the SSR to control the boiler alone (brew thermostat replaced by the Pt1000, as on this machine); leave the
+hardware steam switch off.
+
+| Key               | Default | Meaning                                                                |
+|-------------------|---------|------------------------------------------------------------------------|
+| `SteamPidTarget`  | 120     | PID target in steam mode (°C); above `CtrlTarget`, at most 140         |
+| `SteamPidTimeout` | 900     | the switch turns itself off after this many seconds                    |
+| `SteamPidPropFactor` | 40   | P part in steam mode: counts per K below the target                    |
+| `SteamPidIntFactor` | 300   | I part in steam mode: Tn in s (or Ki, see `CtrlTimeFactor`)            |
+| `SteamPidDifFactor` | 15    | D part in steam mode: Tv in s (or Kd)                                  |
+| `SteamPidBaseOutput` | 30   | counts: the I part starts here (heat loss at the steam target)         |
+
+While it is on, the PID uses `SteamPidTarget` as target and the steam P, I and D factors; active terms
+and output limits are the brew ones, the brew thresholds are not used (`HighTresholdValue` would keep
+the heater off). The LED shows magenta blinking below
+`SteamPidTarget - ReadyBand`, steady magenta from there. It turns off on request, after `SteamPidTimeout`
+and at standby; it cannot be turned on in standby and is always off after a restart. Each switch starts the
+PID clean (in steam mode with the integral part at `SteamPidBaseOutput`). Afterwards the temperature detection above stays off until the boiler is below `SteamExitTemp`,
+so the cooling boiler is not mistaken for the hardware switch. The graphs and `data.csv` show the steam
+target as target while it is on.
+
 ## Home Assistant (MQTT, optional)
 
 Settings → section **MQTT**: `MqttEnabled`, `MqttHost` (e.g. the Home Assistant host with the Mosquitto add-on),
@@ -169,6 +194,9 @@ The device appears in Home Assistant via MQTT discovery as **BananaCoffee** with
 | Fault, Fault details     | binary_sensor, sensor | diagnostic                                           |
 | Wi-Fi signal             | sensor        | %, diagnostic                                                |
 | Target temperature       | number        | 60–100 °C, step 0.5 (limits enforced on the device)          |
+| Steam mode               | switch        | software steam switch (see above); state follows within 5 s  |
+| Steam mode off in        | sensor        | min until the software steam switch turns itself off         |
+| Steam target temperature | number        | 105–140 °C, step 0.5, config                                  |
 | Standby after            | number        | 10–600 min; below the uptime = standby now                   |
 | Restart                  | button        | also leaves standby                                          |
 

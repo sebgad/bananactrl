@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,7 +15,8 @@
 /// Topics, with <id> = device id (e.g. "bananactrl_3068b0"):
 ///   bananactrl/<id>/availability   "online" / "offline" (retained, offline is the last will)
 ///   bananactrl/<id>/state          JSON, every few seconds and after each command
-///   bananactrl/<id>/<command>/set  commands from Home Assistant (target, standby_time, restart)
+///   bananactrl/<id>/<command>/set  commands from Home Assistant (target, standby_time, restart, steam_mode,
+///                                  steam_target)
 ///   homeassistant/<component>/<id>/<entity>/config   discovery (retained)
 namespace banana::mqtt {
 
@@ -28,6 +30,8 @@ inline constexpr float kTargetMax = 100.0F;
 inline constexpr float kTargetStep = 0.5F;
 inline constexpr int kStandbyMinMinutes = 10;
 inline constexpr int kStandbyMaxMinutes = 600;
+inline constexpr float kSteamTargetMin = 105.0F; ///< above kTargetMax: config::invalidSetting() always passes
+inline constexpr float kSteamTargetMax = config::kSteamTargetMax;
 
 struct Device {
     std::string id;                    ///< unique, used in topics and unique_ids
@@ -40,7 +44,13 @@ enum class Command : std::uint8_t {
     Target,      ///< number: target temperature [°C]
     StandbyTime, ///< number: time to standby [min]
     Restart,     ///< button
+    SteamMode,   ///< switch: software steam switch ("ON" / "OFF"), not a setting
+    SteamTarget, ///< number: steam target temperature [°C]
 };
+
+/// All commands, for subscribing.
+inline constexpr std::array kCommands{Command::Target, Command::StandbyTime, Command::Restart,
+                                      Command::SteamMode, Command::SteamTarget};
 
 struct Message {
     std::string topic;
@@ -71,5 +81,8 @@ private:
 /// Applies a number command (payload as sent by Home Assistant, e.g. "92.5") to `config`, clamped to the
 /// limits above. False if the payload is not a number or the command is not a setting.
 [[nodiscard]] bool applyCommand(Command command, std::string_view payload, config::Config& config);
+
+/// Switch payload: "ON" -> true, "OFF" -> false, anything else nullopt.
+[[nodiscard]] std::optional<bool> parseSwitch(std::string_view payload);
 
 } // namespace banana::mqtt

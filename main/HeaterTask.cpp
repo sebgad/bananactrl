@@ -54,6 +54,10 @@ void report(const control::ProcessSnapshot& before, const control::ProcessSnapsh
     if (after.brewing != before.brewing) {
         ESP_LOGI(kTag, "brewing %s", after.brewing ? "started" : "stopped");
     }
+    if (after.steamMode != before.steamMode) {
+        ESP_LOGI(kTag, "software steam switch %s (T=%.2f C, target %.1f C)", after.steamMode ? "on" : "off",
+                 static_cast<double>(after.celsius), static_cast<double>(after.target));
+    }
     if (after.steam != before.steam) {
         ESP_LOGI(kTag, "steam mode %s (T=%.2f C)", steamState(after.steam),
                  static_cast<double>(after.celsius));
@@ -88,6 +92,12 @@ void HeaterTask::requestConfig(const config::Config& config)
         pendingConfig_ = config;
     }
     events_->set(kConfigChanged);
+}
+
+void HeaterTask::requestSteamMode(bool on)
+{
+    pendingSteamMode_.store(on);
+    events_->set(kSteamRequest);
 }
 
 control::ProcessSnapshot HeaterTask::snapshot() const
@@ -125,7 +135,8 @@ void HeaterTask::run()
     for (;;) {
         const auto& brew = loop_.brewDetector();
         const auto timeout = brew.pending() ? brew.remaining(nowMillis()) : kIdleWait;
-        const auto bits = events_->waitAny(kSampleReady | kTick | kPumpEdge | kConfigChanged, timeout);
+        const auto bits =
+            events_->waitAny(kSampleReady | kTick | kPumpEdge | kConfigChanged | kSteamRequest, timeout);
         const auto now = nowMillis();
         const control::ProcessSnapshot before = loop_.snapshot();
 
@@ -136,6 +147,9 @@ void HeaterTask::run()
         loop_.pollBrew(now, hw_.pumpRelay->level());
         if ((bits & kConfigChanged) != 0) {
             applyPendingConfig();
+        }
+        if ((bits & kSteamRequest) != 0) {
+            applySteamRequest(now);
         }
         if ((bits & kSampleReady) != 0) {
             loop_.onSample(now);
@@ -187,6 +201,13 @@ void HeaterTask::store(const control::ProcessSnapshot& snapshot)
     }
     if (storage::IRowListener* listener = rowListener_.load(); listener != nullptr) {
         listener->onRow(*written);
+    }
+}
+
+void HeaterTask::applySteamRequest(control::ControlLoop::Millis now)
+{
+    if (!loop_.setSteamMode(pendingSteamMode_.load(), now)) {
+        ESP_LOGW(kTag, "software steam switch not turned on: standby");
     }
 }
 

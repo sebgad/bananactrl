@@ -25,6 +25,7 @@ public:
     static constexpr rtos::EventGroup::Bits kTick = 1U << 1U;          ///< 450 ms timer
     static constexpr rtos::EventGroup::Bits kPumpEdge = 1U << 2U;      ///< pump relay changed
     static constexpr rtos::EventGroup::Bits kConfigChanged = 1U << 3U; ///< requestConfig()
+    static constexpr rtos::EventGroup::Bits kSteamRequest = 1U << 4U;  ///< requestSteamMode()
 
     /// All non-null, owned by App.
     struct Hardware {
@@ -47,6 +48,8 @@ public:
     void requestConfig(const config::Config& config) override;
     /// Every saved configuration (settings page, MQTT, reset) is applied.
     void onConfigChanged(const config::Config& config) override { requestConfig(config); }
+    /// From any task: applied inside the heater task at its next wake-up.
+    void requestSteamMode(bool on) override;
     [[nodiscard]] control::ProcessSnapshot snapshot() const override;
     /// Appends a row to data.csv on every 450 ms tick (STORE). The recorder must outlive the task.
     void attachRecorder(storage::MeasurementRecorder* recorder) { recorder_.store(recorder); }
@@ -63,6 +66,7 @@ protected:
 
 private:
     void applyPendingConfig();
+    void applySteamRequest(control::ControlLoop::Millis now);
     void store(const control::ProcessSnapshot& snapshot);
 
     rtos::EventGroup* events_;
@@ -75,6 +79,7 @@ private:
 
     std::mutex configMutex_;
     std::optional<config::Config> pendingConfig_;
+    std::atomic<bool> pendingSteamMode_{false};
 
     mutable std::mutex snapshotMutex_;
     control::ProcessSnapshot snapshot_;

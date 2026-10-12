@@ -8,7 +8,8 @@
 
 namespace banana::web {
 
-/// Live values and settings: /lastvalues.json, /version.json, /params.json, /paramUpdate, /paramReset, /restartesp.
+/// Live values and settings: /lastvalues.json, /version.json, /params.json, /paramUpdate, /paramReset,
+/// /restartesp, /steam (software steam switch, body "on" or "off").
 class ApiRoutes {
 public:
     /// All referenced objects must outlive the server.
@@ -26,6 +27,7 @@ private:
     esp_err_t paramUpdate(HttpRequest& request);
     esp_err_t paramReset(HttpRequest& request);
     esp_err_t restart(HttpRequest& request);
+    esp_err_t steam(HttpRequest& request);
 
     config::ConfigStore* store_;
     control::IHeaterControl* heater_;

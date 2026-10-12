@@ -427,4 +427,122 @@ TEST(ControlLoop, GainChangeResetsIntegrator)
               5.0F * 2); // restarted from 0: at most 1 s x 5 K (x2 margin)
 }
 
+TEST(ControlLoop, SoftwareSteamSwitchHeatsToTheSteamTarget)
+{
+    using banana::control::MachineState;
+    using banana::control::SteamState;
+    Bench bench;
+    bench.sensor.celsius = 110.0F; // the hardware detection would keep the SSR off here
+    bench.run(450ms);
+    ASSERT_EQ(bench.loop.snapshot().steam, SteamState::HeatingUp);
+    ASSERT_FLOAT_EQ(bench.heater.last(), 0.0F);
+
+    EXPECT_TRUE(bench.loop.setSteamMode(true, bench.now));
+    bench.run(1350ms);
+    const auto snapshot = bench.loop.snapshot();
+    EXPECT_TRUE(snapshot.steamMode);
+    EXPECT_FLOAT_EQ(snapshot.target, 120.0F);
+    EXPECT_EQ(snapshot.steam, SteamState::HeatingUp);
+    EXPECT_EQ(snapshot.state, MachineState::SteamHeatingUp);
+    EXPECT_EQ(bench.led.color, LedColor::Magenta);
+    // First PID step after the switch: P 40 * (120 - 110) + SteamPidBaseOutput 30, limited to 255
+    EXPECT_NE(std::ranges::find(bench.heater.writes, 255.0F), bench.heater.writes.end());
+    EXPECT_GT(bench.heater.last(), 0.0F);
+
+    bench.sensor.celsius = 119.5F; // within the ready band
+    bench.run(1350ms);
+    EXPECT_EQ(bench.loop.snapshot().state, MachineState::SteamReady);
+    EXPECT_GT(bench.heater.last(), 0.0F);
+}
+
+TEST(ControlLoop, SoftwareSteamSwitchHoldsTheTargetWithTheBaseOutput)
+{
+    Bench bench;
+    bench.sensor.celsius = 120.0F; // on target: P 0, the base output holds it
+    ASSERT_TRUE(bench.loop.setSteamMode(true, bench.now));
+    bench.run(450ms);
+    EXPECT_FLOAT_EQ(bench.heater.last(), 30.0F);
+    EXPECT_FLOAT_EQ(bench.loop.snapshot().pidIntegrator, 30.0F / (40.0F / 300.0F));
+}
+
+TEST(ControlLoop, SoftwareSteamSwitchIgnoresTheBrewThresholds)
+{
+    banana::config::Config config;
+    config.pid.highThresholdActive = true;
+    config.pid.highThreshold = 95.0F;
+    Bench bench{config};
+    bench.sensor.celsius = 100.0F;
+    bench.run(1s);
+    ASSERT_FLOAT_EQ(bench.heater.last(), 0.0F);
+
+    ASSERT_TRUE(bench.loop.setSteamMode(true, bench.now));
+    bench.run(1s);
+    EXPECT_GT(bench.heater.last(), 0.0F);
+}
+
+TEST(ControlLoop, SoftwareSteamSwitchTimesOutAndHoldsTheDetection)
+{
+    using banana::control::MachineState;
+    using banana::control::SteamState;
+    Bench bench;
+    bench.sensor.celsius = 120.0F;
+    ASSERT_TRUE(bench.loop.setSteamMode(true, bench.now));
+    bench.run(60s);
+    EXPECT_NEAR(bench.loop.snapshot().steamRemaining, 840.0F, 1.0F);
+
+    bench.run(840s); // 15 min
+    auto snapshot = bench.loop.snapshot();
+    EXPECT_FALSE(snapshot.steamMode);
+    EXPECT_FLOAT_EQ(snapshot.steamRemaining, 0.0F);
+    EXPECT_FLOAT_EQ(snapshot.target, 85.0F);
+
+    // Hot from the PID, not from the steam switch: no steam detection, brew mode cooling down
+    bench.run(5s);
+    snapshot = bench.loop.snapshot();
+    EXPECT_EQ(snapshot.steam, SteamState::Off);
+    EXPECT_EQ(snapshot.state, MachineState::CoolingDown);
+    EXPECT_FLOAT_EQ(bench.heater.last(), 0.0F);
+
+    // Below SteamExitTemp the detection is armed again
+    bench.sensor.celsius = 99.0F;
+    bench.run(450ms);
+    bench.sensor.celsius = 110.0F;
+    bench.run(450ms);
+    EXPECT_EQ(bench.loop.snapshot().steam, SteamState::HeatingUp);
+}
+
+TEST(ControlLoop, SoftwareSteamSwitchOffReturnsToTheBrewTarget)
+{
+    Bench bench;
+    bench.sensor.celsius = 119.5F; // not saturated: the integrator charges
+    ASSERT_TRUE(bench.loop.setSteamMode(true, bench.now));
+    bench.run(30s);
+    ASSERT_GT(bench.loop.snapshot().pidIntegrator, 0.0F);
+
+    bench.sensor.celsius = 84.0F; // e.g. after a long cool-down
+    EXPECT_TRUE(bench.loop.setSteamMode(false, bench.now));
+    bench.run(450ms);
+    EXPECT_FALSE(bench.loop.snapshot().steamMode);
+    EXPECT_FLOAT_EQ(bench.loop.snapshot().target, 85.0F);
+    // First PID step after the switch: reset, only P: 10 * (85 - 84)
+    const auto& writes = bench.heater.writes;
+    EXPECT_NE(std::ranges::find(writes.end() - 2, writes.end(), 10.0F), writes.end());
+}
+
+TEST(ControlLoop, StandbyEndsAndBlocksTheSoftwareSteamSwitch)
+{
+    banana::config::Config config;
+    config.system.timeToStandby = std::chrono::seconds{10};
+    Bench bench{config};
+    bench.sensor.celsius = 100.0F;
+    ASSERT_TRUE(bench.loop.setSteamMode(true, bench.now));
+    bench.run(11s);
+    EXPECT_TRUE(bench.loop.standby());
+    EXPECT_FALSE(bench.loop.steamMode());
+    EXPECT_FLOAT_EQ(bench.heater.last(), 0.0F);
+
+    EXPECT_FALSE(bench.loop.setSteamMode(true, bench.now));
+    EXPECT_FALSE(bench.loop.steamMode());
+}
+
 } // namespace

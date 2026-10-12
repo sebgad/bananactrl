@@ -85,6 +85,14 @@ TEST(LiveValues, ArduinoKeyNames)
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorIntegrator"].as<float>(), 1.5F);
     EXPECT_FLOAT_EQ(doc["PID"]["ErrorDiff"].as<float>(), -0.5F);
     EXPECT_EQ(doc["WiFi"]["SignalStrength in %"].as<int>(), 64);
+    EXPECT_EQ(doc["SteamMode"], false);
+    EXPECT_EQ(doc["SteamRemaining"], 0);
+
+    snapshot.steamMode = true;
+    snapshot.steamRemaining = 599.6F;
+    ASSERT_EQ(deserializeJson(doc, lastValuesJson(snapshot, 64)), DeserializationError::Ok);
+    EXPECT_EQ(doc["SteamMode"], true);
+    EXPECT_EQ(doc["SteamRemaining"], 599);
 }
 
 TEST(LiveValues, VersionJson)

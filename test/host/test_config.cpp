@@ -49,6 +49,12 @@ TEST(Config, SteamAndReadyBandDefaults)
     EXPECT_EQ(c.steam.exit, 100.0F);
     EXPECT_EQ(c.steam.ready, 119.0F);
     EXPECT_EQ(c.steam.readyLeave, 115.0F);
+    EXPECT_EQ(c.steam.pidTarget, 120.0F);
+    EXPECT_EQ(c.steam.pidTimeout, std::chrono::minutes{15});
+    EXPECT_EQ(c.steam.pidPropFactor, 40.0F);
+    EXPECT_EQ(c.steam.pidIntFactor, 300.0F);
+    EXPECT_EQ(c.steam.pidDifFactor, 15.0F);
+    EXPECT_EQ(c.steam.pidBaseOutput, 30.0F);
     EXPECT_TRUE(banana::config::invalidSetting(c).empty());
 }
 
@@ -66,6 +72,27 @@ TEST(Config, InvalidSteamOrderOrReadyBandIsRejected)
     EXPECT_FALSE(withSteam([](Config& c) { c.steam.readyLeave = 119.5F; }).empty());
     EXPECT_FALSE(withSteam([](Config& c) { c.steam.readyLeave = 99.0F; }).empty());
     EXPECT_TRUE(withSteam([](Config& c) { c.steam.readyLeave = 104.0F; }).empty()); // below enter is fine
+}
+
+TEST(Config, InvalidSteamPidTargetOrTimeoutIsRejected)
+{
+    using banana::config::invalidSetting;
+    const auto with = [](auto change) {
+        Config c;
+        change(c);
+        return invalidSetting(c);
+    };
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidTarget = 85.0F; }).empty()); // == CtrlTarget
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidTarget = 140.5F; }).empty());
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidTimeout = std::chrono::seconds{0}; }).empty());
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidPropFactor = -1.0F; }).empty());
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidIntFactor = -1.0F; }).empty());
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidDifFactor = -1.0F; }).empty());
+    EXPECT_FALSE(with([](Config& c) { c.steam.pidBaseOutput = -1.0F; }).empty());
+    EXPECT_FALSE(with([](Config& c) { c.pid.highLimit = 20.0F; }).empty());    // base output above the limit
+    EXPECT_TRUE(with([](Config& c) { c.steam.pidIntFactor = 0.0F; }).empty()); // Tn 0: no I part
+    EXPECT_TRUE(with([](Config& c) { c.steam.pidTarget = 140.0F; }).empty());
+    EXPECT_TRUE(with([](Config& c) { c.steam.pidTarget = 95.0F; }).empty()); // below the bimetal is fine
 }
 
 TEST(Config, EqualityComparesAllGroups)
@@ -106,6 +133,26 @@ TEST(ConfigMapping, AbsoluteGainsAndThresholds)
     EXPECT_EQ(s.gains, (banana::control::Gains{.kp = 10.0F, .ki = 0.2F, .kd = 4.0F}));
     EXPECT_EQ(s.thresholds.on, 50.0F);
     EXPECT_EQ(s.thresholds.off, 95.0F);
+}
+
+TEST(ConfigMapping, SteamPidHasOwnFactorsWithoutThresholds)
+{
+    banana::config::PidSettings pid;
+    pid.propFactor = 25.0F;
+    pid.difActive = true;
+    pid.highThresholdActive = true;
+    pid.highThreshold = 95.0F;
+    pid.highLimit = 200.0F;
+    banana::config::SteamSettings steam;
+    steam.pidTarget = 122.0F;
+    const auto brew = banana::control::toPidSettings(pid);
+    const auto s = banana::control::toSteamPidSettings(pid, steam);
+    EXPECT_EQ(s.target, 122.0F);
+    EXPECT_EQ(s.gains, banana::control::Gains::fromTimeConstants(40.0F, 300.0F, 15.0F)); // not the brew Kp
+    EXPECT_EQ(s.terms, brew.terms);
+    EXPECT_EQ(s.limits.upper, 200.0F);
+    EXPECT_FALSE(s.thresholds.on.has_value());
+    EXPECT_FALSE(s.thresholds.off.has_value());
 }
 
 TEST(ConfigMapping, BrewFeedForwardSharesPidLimits)

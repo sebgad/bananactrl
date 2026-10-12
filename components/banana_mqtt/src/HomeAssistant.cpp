@@ -21,11 +21,13 @@ std::string_view commandName(Command command)
         return "standby_time";
     case Command::Restart:
         return "restart";
+    case Command::SteamMode:
+        return "steam_mode";
+    case Command::SteamTarget:
+        return "steam_target";
     }
     return "unknown";
 }
-
-constexpr std::array kCommands{Command::Target, Command::StandbyTime, Command::Restart};
 
 /// Fields every entity shares: name, ids, availability, device.
 JsonDocument entity(const Device& device, const Topics& topics, std::string_view key, std::string_view name)
@@ -205,6 +207,31 @@ std::vector<Message> discoveryMessages(const Device& device, const Topics& topic
         messages.push_back(message("number", device, "target", doc));
     }
     {
+        JsonDocument doc = stateEntity(device, topics, "steam_mode", "Steam mode");
+        doc["command_topic"] = topics.command(Command::SteamMode);
+        doc["icon"] = "mdi:kettle-steam";
+        messages.push_back(message("switch", device, "steam_mode", doc));
+    }
+    {
+        JsonDocument doc = stateEntity(device, topics, "steam_off_in", "Steam mode off in");
+        doc["device_class"] = "duration";
+        doc["unit_of_measurement"] = "min";
+        doc["icon"] = "mdi:timer-sand";
+        messages.push_back(message("sensor", device, "steam_off_in", doc));
+    }
+    {
+        JsonDocument doc = stateEntity(device, topics, "steam_target", "Steam target temperature");
+        doc["command_topic"] = topics.command(Command::SteamTarget);
+        doc["device_class"] = "temperature";
+        doc["unit_of_measurement"] = "°C";
+        doc["min"] = kSteamTargetMin;
+        doc["max"] = kSteamTargetMax;
+        doc["step"] = kTargetStep;
+        doc["mode"] = "box";
+        doc["entity_category"] = "config";
+        messages.push_back(message("number", device, "steam_target", doc));
+    }
+    {
         JsonDocument doc = stateEntity(device, topics, "standby_time", "Standby after");
         doc["command_topic"] = topics.command(Command::StandbyTime);
         doc["device_class"] = "duration";
@@ -236,7 +263,7 @@ std::string statePayload(const control::ProcessSnapshot& snapshot, const config:
     JsonDocument doc;
     doc["temperature"] = std::round(snapshot.celsius * 100.0F) / 100.0F;
     doc["heater"] = std::round(snapshot.heaterPercent * 10.0F) / 10.0F;
-    doc["target"] = snapshot.target;
+    doc["target"] = config.pid.target; // the setting: snapshot.target is the steam target in steam mode
     doc["brewing"] = snapshot.brewing ? "ON" : "OFF";
     doc["state"] = control::toString(snapshot.state);
     doc["standby"] = snapshot.standby ? "ON" : "OFF";
@@ -245,6 +272,9 @@ std::string statePayload(const control::ProcessSnapshot& snapshot, const config:
     doc["wifi"] = wifiPercent;
     doc["standby_time"] = static_cast<int>(config.system.timeToStandby.count() / 60);
     doc["standby_in"] = static_cast<int>(std::ceil(remaining / 60.0F));
+    doc["steam_mode"] = snapshot.steamMode ? "ON" : "OFF";
+    doc["steam_target"] = config.steam.pidTarget;
+    doc["steam_off_in"] = static_cast<int>(std::ceil(snapshot.steamRemaining / 60.0F));
 
     std::string json;
     serializeJson(doc, json);
@@ -269,10 +299,27 @@ bool applyCommand(Command command, std::string_view payload, config::Config& con
         config.system.timeToStandby = std::chrono::minutes{minutes};
         return true;
     }
+    case Command::SteamTarget: {
+        const float clamped = std::clamp(*value, kSteamTargetMin, kSteamTargetMax);
+        config.steam.pidTarget = std::round(clamped / kTargetStep) * kTargetStep;
+        return true;
+    }
     case Command::Restart:
+    case Command::SteamMode:
         return false;
     }
     return false;
+}
+
+std::optional<bool> parseSwitch(std::string_view payload)
+{
+    if (payload == "ON") {
+        return true;
+    }
+    if (payload == "OFF") {
+        return false;
+    }
+    return std::nullopt;
 }
 
 } // namespace banana::mqtt

@@ -68,6 +68,12 @@ std::string toJson(const Config& c)
     steam["SteamExitTemp"] = c.steam.exit;
     steam["SteamReadyTemp"] = c.steam.ready;
     steam["SteamReadyLeaveTemp"] = c.steam.readyLeave;
+    steam["SteamPidTarget"] = c.steam.pidTarget;
+    steam["SteamPidTimeout"] = static_cast<std::uint32_t>(c.steam.pidTimeout.count());
+    steam["SteamPidPropFactor"] = c.steam.pidPropFactor;
+    steam["SteamPidIntFactor"] = c.steam.pidIntFactor;
+    steam["SteamPidDifFactor"] = c.steam.pidDifFactor;
+    steam["SteamPidBaseOutput"] = c.steam.pidBaseOutput;
 
     doc["SSR"]["SsrFreq"] = c.ssr.frequencyHz;
     doc["SSR"]["PwmSsrResolution"] = c.ssr.resolutionBits;
@@ -143,6 +149,12 @@ Result<ParsedConfig> fromJson(std::string_view json, const Config& base)
     read(steam, "SteamExitTemp", c.steam.exit, ok);
     read(steam, "SteamReadyTemp", c.steam.ready, ok);
     read(steam, "SteamReadyLeaveTemp", c.steam.readyLeave, ok);
+    read(steam, "SteamPidTarget", c.steam.pidTarget, ok);
+    read(steam, "SteamPidTimeout", c.steam.pidTimeout, ok);
+    read(steam, "SteamPidPropFactor", c.steam.pidPropFactor, ok);
+    read(steam, "SteamPidIntFactor", c.steam.pidIntFactor, ok);
+    read(steam, "SteamPidDifFactor", c.steam.pidDifFactor, ok);
+    read(steam, "SteamPidBaseOutput", c.steam.pidBaseOutput, ok);
 
     const JsonVariantConst ssr = doc["SSR"];
     read(ssr, "SsrFreq", c.ssr.frequencyHz, ok);

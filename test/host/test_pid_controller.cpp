@@ -204,6 +204,23 @@ TEST(PidController, ThresholdsOverrideOutput)
     EXPECT_FLOAT_EQ(pid.compute(91.0F, milliseconds{450}), 0.0F);
 }
 
+TEST(PidController, ResetToStartsTheIntegralPartAtAnOutput)
+{
+    PidController pid{simpleSettings()};
+    (void)pid.compute(20.0F, milliseconds{450});
+    pid.resetTo(30.0F);
+    EXPECT_FLOAT_EQ(pid.integrator(), 300.0F); // 30 counts / Ki 0.1
+    EXPECT_FLOAT_EQ(pid.errorDiff(), 0.0F);
+    // On target: the integral part alone holds the output
+    EXPECT_FLOAT_EQ(pid.compute(85.0F, milliseconds{0}), 30.0F);
+
+    auto settings = simpleSettings();
+    settings.terms.integral = false;
+    PidController noIntegral{settings};
+    noIntegral.resetTo(30.0F);
+    EXPECT_FLOAT_EQ(noIntegral.integrator(), 0.0F);
+}
+
 TEST(PidController, ConfigureKeepsState)
 {
     PidController pid{simpleSettings()};

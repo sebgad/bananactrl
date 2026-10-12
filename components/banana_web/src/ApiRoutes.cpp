@@ -17,6 +17,7 @@ namespace {
 
 constexpr const char* kTag = "web";
 constexpr std::size_t kMaxParamsBytes = 4096; // params.json is ~1.5 kB
+constexpr std::size_t kMaxSwitchBytes = 8;
 constexpr std::chrono::milliseconds kRestartDelay{2000};
 
 } // namespace
@@ -38,7 +39,10 @@ Result<void> ApiRoutes::registerOn(WebServer& server)
     if (auto res = server.on<ApiRoutes, &ApiRoutes::paramReset>("/paramReset", HTTP_GET, *this); !res) {
         return res;
     }
-    return server.on<ApiRoutes, &ApiRoutes::restart>("/restartesp", HTTP_GET, *this);
+    if (auto res = server.on<ApiRoutes, &ApiRoutes::restart>("/restartesp", HTTP_GET, *this); !res) {
+        return res;
+    }
+    return server.on<ApiRoutes, &ApiRoutes::steam>("/steam", HTTP_POST, *this);
 }
 
 esp_err_t ApiRoutes::lastValues(HttpRequest& request)
@@ -116,6 +120,21 @@ esp_err_t ApiRoutes::paramReset(HttpRequest& request)
     }
     ESP_LOGI(kTag, "parameters reset to defaults");
     return request.sendText(Status::Ok, "Parameters are set back to default values");
+}
+
+esp_err_t ApiRoutes::steam(HttpRequest& request)
+{
+    auto body = request.body(kMaxSwitchBytes);
+    if (!body || (*body != "on" && *body != "off")) {
+        return request.sendText(Status::BadRequest, "Steam mode not changed: send on or off");
+    }
+    const bool on = *body == "on";
+    if (on && heater_->snapshot().standby) {
+        return request.sendText(Status::Conflict, "Steam mode not available in standby");
+    }
+    heater_->requestSteamMode(on); // the dashboard follows the result through /events
+    ESP_LOGI(kTag, "steam mode %s requested", on ? "on" : "off");
+    return request.sendText(Status::Ok, on ? "Steam mode on" : "Steam mode off");
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static): member for WebServer::on()

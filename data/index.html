@@ -184,7 +184,24 @@
     widgets.diff.set({value: pid["ErrorDiff"]});
     widgets.wifi.set({value: wifi});
     document.getElementById("uptime").textContent = formatDuration(time);
+    showSteam(values);
     redrawAll();
+  }
+
+  // Software steam switch: the PID heats to SteamPidTarget until switched off or SteamPidTimeout
+  let steamMode = false;
+  function showSteam(values) {
+    steamMode = values["SteamMode"] === true;
+    const button = document.getElementById("steam");
+    button.classList.toggle("secondary", !steamMode);
+    button.textContent = steamMode ? "Steam on · " + Math.ceil(values["SteamRemaining"] / 60) + " min" : "Steam off";
+  }
+
+  function toggleSteam() {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "steam");
+    xhr.onload = function() { if (xhr.status !== 200) alert(xhr.responseText); };
+    xhr.send(steamMode ? "off" : "on");
   }
 
   function formatDuration(seconds) {
@@ -251,6 +268,7 @@
     <div class="head-group">
       <h2>Dashboard</h2>
       <span class="pill">Uptime <b id="uptime">-</b></span>
+      <button id="steam" class="secondary" onclick="toggleSteam()" title="Heat to the steam target">Steam off</button>
     </div>
     <div class="range">
       <button data-seconds="120" onclick="setWindow(this)">2 min</button>

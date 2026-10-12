@@ -34,7 +34,7 @@ flowchart TD
 
 The control logic only sees the `io` interfaces (`ITemperatureSensor`, `IPwmOutput`, …), so the same
 `ControlLoop` runs on the ESP32 with the real drivers and on the host with fakes. The web routes see the
-heater only through `control::IHeaterControl` (`snapshot()`, `requestConfig()`).
+heater only through `control::IHeaterControl` (`snapshot()`, `requestConfig()`, `requestSteamMode()`).
 
 ## Runtime: tasks, interrupts, data flow
 
@@ -65,7 +65,7 @@ flowchart LR
         net["wifi 23 · tcpip 18<br/>sys_evt 20 · mdns 1"]
     end
 
-    ev{{"EventGroup<br/>SampleReady · Tick<br/>PumpEdge · ConfigChanged"}}
+    ev{{"EventGroup<br/>SampleReady · Tick<br/>PumpEdge · ConfigChanged<br/>SteamRequest"}}
     snap[("ProcessSnapshot<br/>+ pending Config<br/>(mutex)")]
     ring[("Ring buffer 8 kB<br/>all log output")]
 
@@ -89,15 +89,15 @@ flowchart LR
     rowbuf --> httpd
 
     httpd -- "snapshot() /lastvalues.json" --> snap
-    httpd -- "requestConfig()" --> snap
-    httpd -- "ConfigChanged" --> ev
+    httpd -- "requestConfig(), requestSteamMode()" --> snap
+    httpd -- "ConfigChanged, SteamRequest" --> ev
     httpd -- "settings (NVS), uploads, OTA image,<br/>read pages/data.csv/logs" --> flash
     httpd -- "/events: values + rows (SSE)" --> browser(["Browser"])
     net <--> httpd
     net -. "INetworkStatus<br/>(Wi-Fi fault = purple LED)" .-> heater
     mqtttask["mqtt_task<br/>prio 5 (optional)"] -- "state every 5 s,<br/>discovery" --> ha(["Home Assistant"])
-    ha -- "target, standby time,<br/>restart" --> mqtttask
-    mqtttask -- "snapshot(), update() + requestConfig()" --> snap
+    ha -- "target, steam target, standby time,<br/>steam mode, restart" --> mqtttask
+    mqtttask -- "snapshot(), update() + requestConfig(),<br/>requestSteamMode()" --> snap
 
     ring --> filelog
     filelog -- "logfile_recent.txt" --> flash
@@ -132,7 +132,7 @@ pinning does not shorten the stalls of the heater task, it only avoids the overl
 ### Concurrency rules
 
 - The heater task is the only task that touches the ADC, SSR and LED; everything else talks to it through the
-  event group (`requestConfig()` + `ConfigChanged`) or reads the mutex-protected `ProcessSnapshot`.
+  event group (`requestConfig()` + `ConfigChanged`, `requestSteamMode()` + `SteamRequest`) or reads the mutex-protected `ProcessSnapshot`.
 - ISRs only set event bits (IRAM), no I2C or logging.
 - `ConfigStore` has its own mutex; web UI and MQTT change settings with `update()` (read-modify-write under
   one lock), so they cannot overwrite each other. The settings are one NVS blob (atomic replace).
@@ -169,9 +169,17 @@ format are unchanged. These differences are deliberate; do not "restore" the old
   temperature. All of these are settings (`Steam` section, `config::SteamSettings`), checked by
   `config::invalidSetting()` on `/paramUpdate`; so is the ready band (`PID` → `ReadyBand`, fixed ±1 K in the
   Arduino firmware).
+- Software steam switch (not in the Arduino firmware): `IHeaterControl::requestSteamMode()` (web `/steam`,
+  MQTT `steam_mode/set`) sets an event bit; the heater task calls `ControlLoop::setSteamMode()`. It is runtime
+  state, not a setting (no NVS write, off after restart). The PID then runs `toSteamPidSettings()` (brew active
+  terms and limits, steam Kp/Tn/Tv, target `SteamPidTarget`, no thresholds) and is reset on each switch,
+  in steam mode with the integral part at `SteamPidBaseOutput` (`PidController::resetTo()`). Off after `SteamPidTimeout`, at
+  standby, refused in standby. The temperature detection is suspended while it is on and afterwards until
+  the boiler is below `SteamExitTemp`. `ProcessSnapshot::target` is the active target (also in `data.csv`);
+  Home Assistant's `target` stays the brew setting.
 - The LED colour and the Home Assistant "State" sensor both come from `control::MachineState`
   (`machineState()`: fault, brewing, steam, then temperature vs. target). `/lastvalues.json` has the extra
-  key `State`.
+  keys `State`, `SteamMode` and `SteamRemaining` (s).
 - Kept on purpose: standby counts from boot, not from the last use, and lasts until reboot.
 - Fault flags are `Flags<Fault>`: the Arduino check `iErrorId == WIFI_DISCONNECT` could never be true because
   `NO_ERROR` was itself a bit. Fault, brewing and standby changes are logged once, not every 0.9 s.

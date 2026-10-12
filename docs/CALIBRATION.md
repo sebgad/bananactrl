@@ -40,6 +40,8 @@ it in % of `HighLimitManipulation`. Temperatures in °C, temperature differences
 | PID | `BrewFfStart`, `BrewFfEnd`, `BrewFfTau`, `BrewFfGain` | 255, 10, 14, 35 | same | heater output while brewing |
 | Steam | `SteamDetectionActivate` | on | on | steam mode detection |
 | Steam | `SteamEnterTemp`, `SteamReadyTemp`, `SteamReadyLeaveTemp`, `SteamExitTemp` | 105, 119, 115, 100 | same | steam thresholds (°C) |
+| Steam | `SteamPidTarget`, `SteamPidTimeout` | 120, 900 | 118, 900 | software steam switch: PID target (°C), auto-off (s) |
+| Steam | `SteamPidPropFactor`, `SteamPidIntFactor`, `SteamPidDifFactor`, `SteamPidBaseOutput` | 40, 300, 15, 30 | same | steam PID: Kp, Tn (s), Tv (s), start of the I part (counts) |
 | SSR | `SsrFreq`, `PwmSsrResolution` | 15, 8 | same | PWM of the solid-state relay (Hz, bits) |
 | LED | `RwmRgbFreq`, `RwmRgbResolution` | 500, 8 | same | PWM of the status LED (Hz, bits) |
 | LED | `GainFactorRed`, `…Green`, `…Blue` | 1 | 1 | brightness per LED channel |
@@ -199,6 +201,63 @@ trigger it.
 How to set them: watch a steam session on the Graphs page. `SteamReadyTemp` should be just below the
 temperature at which your bimetal switch opens (here the boiler peaked at 123.6 °C, read by the sensor on
 the wall). `SteamEnterTemp` must lie above anything the PID reaches in brew mode, including overshoot.
+
+### Software steam switch
+
+The dashboard button and the Home Assistant switch "Steam mode" let the PID heat to `SteamPidTarget`
+instead (the SSR controls the boiler alone; the hardware steam switch stays off):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `SteamPidTarget` | 120 °C | PID target in steam mode; must be above `CtrlTarget` and at most 140 °C |
+| `SteamPidTimeout` | 900 s | turns itself off after this; also off at standby and after a restart |
+| `SteamPidPropFactor` | 40 | P part in steam mode (counts per K) |
+| `SteamPidIntFactor` | 300 s | I part in steam mode (Tn, or Ki without `CtrlTimeFactor`) |
+| `SteamPidDifFactor` | 15 s | D part in steam mode (Tv, or Kd) |
+| `SteamPidBaseOutput` | 30 counts | the I part starts at this output on every switch to steam mode |
+
+The steam PID shares the active terms and the output limits with brewing and uses no thresholds. It has
+its own P, I and D factors because the brew ones do not suit it. A first session at
+118 °C with the brew factors of this machine (Kp 25, Tn 2000 s, Tv 45 s) showed:
+
+- **Offset:** it settled at 117.0 °C with 11–12 % output (about 30 counts, the heat loss there). P alone
+  gives that only at 1 K below the target, and with Tn 2000 s the I part closes 1 K in about 35 min,
+  longer than `SteamPidTimeout`. Hence Tn 300 s and `SteamPidBaseOutput` 30: the I part starts with the
+  heat loss instead of 0, so the target holds from the start.
+- **Braking:** Tv 45 s takes 1125 counts off per K/s of rise. At switch-on the output was 0 at 111 °C (7 K
+  below the target), and after drawing steam (117 → 113 °C) the heater was back off at 114 °C. Overshoot is
+  harmless at steam temperatures, quick recovery while steaming is not: hence Tv 15 s.
+
+A second session with Kp 25, Tn 300 s, Tv 15 s and the base output reached and held 118 °C (at most
+0.3 K above) and was back at 117 °C 22 s after drawing steam. During the draw, though, the output peaked at
+60 % about 3 K below the target: P alone gave only 25 × 2.9 K. Hence `SteamPidPropFactor` 40. Kp also
+scales the I and D parts (Ki = Kp / Tn, Kd = Kp × Tv), so all three react 1.6 times as strongly.
+
+A third session with Kp 40 and a similar draw (about 0.12 K/s) confirmed it:
+
+| | Kp 25 | Kp 40 |
+|---|---|---|
+| drop while drawing steam | 2.8 K | 3.0 K |
+| peak output during the draw | 60 % | 95 % |
+| back at the target after the lowest point | 44 s | 21 s |
+| overshoot | 0.3 K | 1.1 K |
+
+The drop hardly depends on Kp: near full power the temperature kept falling for a few seconds, as the
+draw takes more heat than the heater supplies and the element's heat reaches the sensor late. Kp 40
+halves the recovery time. The overshoot comes from the same lag (the D part had already switched the
+heater off 1.3 K below the target) and from the I part, which charged to about 39 counts during the draw
+and winds down over a few minutes. At steam temperatures 1 K is harmless; for less, raise
+`SteamPidDifFactor` to about 20 s.
+
+How to tune: if it settles below the target, raise `SteamPidBaseOutput` (read the output at a steady
+temperature on the dashboard); if it stays above, lower it. If the temperature drops far while steaming,
+raise `SteamPidPropFactor`; if it oscillates around the target, lower it. If it recovers slowly after
+steaming, lower `SteamPidDifFactor`; if it overshoots by more than you like, raise it.
+
+A higher `SteamPidTarget` gives drier steam and more reserve, but the boiler needs longer
+to heat up and to cool back down for brewing. Without the bimetal switch in the loop there is no hysteresis,
+so the temperature stays closer to the target than with the hardware switch. The temperature detection
+(table above) stays off after a software steam session until the boiler is below `SteamExitTemp`.
 
 ## SSR: `SsrFreq` and `PwmSsrResolution`
 

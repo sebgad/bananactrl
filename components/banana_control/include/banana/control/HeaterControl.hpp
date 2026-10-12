@@ -18,6 +18,9 @@ public:
     [[nodiscard]] virtual ProcessSnapshot snapshot() const = 0;
     /// Applied inside the heater task at its next wake-up.
     virtual void requestConfig(const config::Config& config) = 0;
+    /// Software steam switch, applied inside the heater task at its next wake-up (ignored in standby; the
+    /// snapshot shows the result).
+    virtual void requestSteamMode(bool on) = 0;
 };
 
 } // namespace banana::control

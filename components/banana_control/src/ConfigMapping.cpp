@@ -24,6 +24,18 @@ PidController::Settings toPidSettings(const config::PidSettings& pid)
     };
 }
 
+PidController::Settings toSteamPidSettings(const config::PidSettings& pid, const config::SteamSettings& steam)
+{
+    config::PidSettings steamPid = pid;
+    steamPid.propFactor = steam.pidPropFactor;
+    steamPid.intFactor = steam.pidIntFactor;
+    steamPid.difFactor = steam.pidDifFactor;
+    PidController::Settings settings = toPidSettings(steamPid);
+    settings.target = steam.pidTarget;
+    settings.thresholds = {};
+    return settings;
+}
+
 BrewFeedForward::Settings toBrewFeedForwardSettings(const config::PidSettings& pid)
 {
     return {

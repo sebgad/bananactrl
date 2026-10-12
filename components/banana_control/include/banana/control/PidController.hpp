@@ -68,6 +68,9 @@ public:
 
     /// Clears integrator and derivative history.
     void reset();
+    /// reset(), but the integral part starts at `integralOutput` (counts) instead of 0. Without an active
+    /// integral part (or Ki = 0) like reset().
+    void resetTo(float integralOutput);
 
     [[nodiscard]] const Settings& settings() const { return settings_; }
     [[nodiscard]] float target() const { return settings_.target; }

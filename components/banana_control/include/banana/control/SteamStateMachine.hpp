@@ -25,6 +25,9 @@ public:
     /// Takes effect at the next update().
     constexpr void configure(const config::SteamSettings& settings) { settings_ = settings; }
 
+    /// Back to brew mode (Off), e.g. when the software steam switch takes over.
+    constexpr void reset() { state_ = SteamState::Off; }
+
     /// Returns true if the state changed.
     constexpr bool update(float celsius, float target)
     {

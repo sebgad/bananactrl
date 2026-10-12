@@ -108,7 +108,7 @@ Wi-Fi credentials); after changing a defaults file, delete `sdkconfig` and rebui
   do not rename them.
 - Live data reaches the pages through server-sent events on `/events` (`values` once per second, `rows`
   with new `data.csv` rows); pages fall back to polling.
-- `WebServer` allows 16 URI handlers (`maxUriHandlers`), 13 are used; check the count when adding routes.
+- `WebServer` allows 16 URI handlers (`maxUriHandlers`), 14 are used; check the count when adding routes.
 - Updates from GitHub need the release assets `bananactrl-<version>.bin`, `MD5SUMS` and (for the pages)
   `webui-<version>.tar`; keep these names in `tools/dist.py`, `Release.cpp` and `data/ota.html` in sync. A new file in `data/`
   reaches devices through the archive; its name must pass `isValidUploadName()`.

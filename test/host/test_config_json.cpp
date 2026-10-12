@@ -107,7 +107,9 @@ TEST(ConfigJson, SteamSettingsFromTheSettingsPage)
     // settings.html sends numbers as strings and booleans as booleans
     const auto parsed = fromJson(R"({"PID": {"ReadyBand": "0.5"},
         "Steam": {"SteamDetectionActivate": false, "SteamEnterTemp": "108", "SteamExitTemp": "102",
-                  "SteamReadyTemp": "121.5", "SteamReadyLeaveTemp": "117"}})",
+                  "SteamReadyTemp": "121.5", "SteamReadyLeaveTemp": "117", "SteamPidTarget": "118.5",
+                  "SteamPidTimeout": "600", "SteamPidPropFactor": "45", "SteamPidIntFactor": "250", "SteamPidDifFactor": "12.5",
+                  "SteamPidBaseOutput": "28"}})",
                                  Config{});
     ASSERT_TRUE(parsed.has_value());
     const Config& c = parsed->config;
@@ -117,6 +119,12 @@ TEST(ConfigJson, SteamSettingsFromTheSettingsPage)
     EXPECT_FLOAT_EQ(c.steam.exit, 102.0F);
     EXPECT_FLOAT_EQ(c.steam.ready, 121.5F);
     EXPECT_FLOAT_EQ(c.steam.readyLeave, 117.0F);
+    EXPECT_FLOAT_EQ(c.steam.pidTarget, 118.5F);
+    EXPECT_EQ(c.steam.pidTimeout, std::chrono::seconds{600});
+    EXPECT_FLOAT_EQ(c.steam.pidPropFactor, 45.0F);
+    EXPECT_FLOAT_EQ(c.steam.pidIntFactor, 250.0F);
+    EXPECT_FLOAT_EQ(c.steam.pidDifFactor, 12.5F);
+    EXPECT_FLOAT_EQ(c.steam.pidBaseOutput, 28.0F);
 }
 
 TEST(ConfigJson, FilesWithoutSteamSettingsGetTheDefaults)
@@ -154,7 +162,8 @@ TEST(ConfigJson, WritesArduinoKeyNames)
          {"\"wifiSSID\"", "\"HighTresholdValue\"", "\"PwmSsrResolution\"", "\"GainFactorColorWhite\"",
           "\"SigFilterActive\"", "\"TimeToStandby\"", "\"BrewFfGain\"", "\"ReadyBand\"",
           "\"SteamDetectionActivate\"", "\"SteamEnterTemp\"", "\"SteamExitTemp\"", "\"SteamReadyTemp\"",
-          "\"SteamReadyLeaveTemp\""}) {
+          "\"SteamReadyLeaveTemp\"", "\"SteamPidTarget\"", "\"SteamPidTimeout\"", "\"SteamPidPropFactor\"",
+          "\"SteamPidIntFactor\"", "\"SteamPidDifFactor\"", "\"SteamPidBaseOutput\""}) {
         EXPECT_NE(json.find(key), std::string::npos) << key;
     }
 }

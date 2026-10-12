@@ -14,6 +14,7 @@ For building and flashing see the [README](../README.md); for what every setting
 - **Brew compensation:** the controller notices when the pump runs and front-loads the heater, so the
   temperature drops less during a shot.
 - **Steam mode:** detected from the temperature alone; while you steam, the controller stays out of the way.
+  Or switch it on in the web UI or Home Assistant, and the PID heats to the steam temperature itself.
 - **Status LED:** shows the machine state at a glance: heating up, ready, brewing, steam, fault.
 - **Web UI:** live dashboard, recorded graphs, settings, firmware update, log. Works on the phone and
   offline (no CDN; in SoftAP mode too).
@@ -102,12 +103,18 @@ heater off and freezes the PID, at 119 °C the LED says "steam ready". When the 
 115 °C (steam switch off), it controls back down to the brew temperature. The thresholds are in the
 **Steam** settings; details in the [README](../README.md#steam-mode).
 
+Alternatively the controller heats for steam itself: the **Steam** button on the dashboard or the "Steam
+mode" switch in Home Assistant sets the PID to the steam target (`SteamPidTarget`, 120 °C). The button
+shows the minutes left; after `SteamPidTimeout` (15 min) or at standby it switches back to brewing.
+
 ## Home Assistant
 
 With MQTT enabled, the controller appears in Home Assistant as **BananaCoffee** without any YAML:
 
 - sensors for temperature, heater power, machine state, time to standby, Wi-Fi signal and faults
-- the target temperature and the standby time as numbers you can change from Home Assistant
+- the target temperature, the steam target and the standby time as numbers you can change from Home
+  Assistant
+- a "Steam mode" switch that heats the boiler to the steam target
 - a restart button (also wakes it from standby)
 
 So you can, for example, show the temperature on a dashboard, get a notification when the machine is

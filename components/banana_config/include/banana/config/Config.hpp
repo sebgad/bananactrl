@@ -59,14 +59,27 @@ struct PidSettings {
     friend constexpr bool operator==(const PidSettings&, const PidSettings&) = default;
 };
 
-/// Steam mode, detected from the temperature alone (control::SteamStateMachine). °C. Detection is off for
-/// targets at or above `exit`: brewing temperatures must stay below the steam range.
+/// Upper limit for SteamSettings::pidTarget: below the end of the Pt1000 table (160 °C) and the safety
+/// thermostat (about 165 °C).
+inline constexpr float kSteamTargetMax = 140.0F;
+
+/// Steam mode. Hardware steam switch: detected from the temperature alone (control::SteamStateMachine), °C;
+/// detection is off for targets at or above `exit` (brewing temperatures must stay below the steam range).
+/// Software steam switch (web UI, MQTT): the PID heats to `pidTarget` for at most `pidTimeout`, with the
+/// active terms of brewing but its own P, I and D factors (read like PidSettings::propFactor / intFactor /
+/// difFactor, i.e. Kp, Tn, Tv with PidSettings::timeFactor).
 struct SteamSettings {
     bool active = true;
     float enter = 105.0F;      ///< rising through it starts steam mode
     float exit = 100.0F;       ///< below it steam detection is armed again; upper limit for the target
     float ready = 119.0F;      ///< steam ready (the bimetal switch opens at about 120 °C)
     float readyLeave = 115.0F; ///< below it steam mode ends (brew mode, LED "cooling down")
+    float pidTarget = 120.0F;  ///< PID target while the software steam switch is on
+    std::chrono::seconds pidTimeout{900}; ///< the software steam switch turns itself off after this
+    float pidPropFactor = 40.0F;          ///< Kp [counts/K]
+    float pidIntFactor = 300.0F;          ///< Tn [s] (or Ki)
+    float pidDifFactor = 15.0F;           ///< Tv [s] (or Kd)
+    float pidBaseOutput = 30.0F; ///< counts: the integral part starts here (heat loss at the steam target)
 
     friend constexpr bool operator==(const SteamSettings&, const SteamSettings&) = default;
 };
@@ -159,6 +172,18 @@ struct Config {
     }
     if (!(steam.exit < steam.readyLeave) || !(steam.readyLeave < steam.ready)) {
         return "SteamReadyLeaveTemp must be between SteamExitTemp and SteamReadyTemp";
+    }
+    if (!(config.pid.target < steam.pidTarget) || !(steam.pidTarget <= kSteamTargetMax)) {
+        return "SteamPidTarget must be above CtrlTarget and at most 140";
+    }
+    if (steam.pidTimeout.count() <= 0) {
+        return "SteamPidTimeout must be greater than 0";
+    }
+    if (!(steam.pidPropFactor >= 0.0F) || !(steam.pidIntFactor >= 0.0F) || !(steam.pidDifFactor >= 0.0F)) {
+        return "SteamPidPropFactor, SteamPidIntFactor and SteamPidDifFactor must not be negative";
+    }
+    if (!(steam.pidBaseOutput >= 0.0F) || !(steam.pidBaseOutput <= config.pid.highLimit)) {
+        return "SteamPidBaseOutput must be between 0 and HighLimitManipulation";
     }
     return {};
 }

@@ -9,17 +9,32 @@ ControlLoop::ControlLoop(io::ITemperatureSensor& sensor, io::IPwmOutput& heater,
                          const io::INetworkStatus& network, const config::Config& config, Millis start)
     : sensor_(&sensor), heater_(&heater), led_(&led), network_(&network), pid_(toPidSettings(config.pid)),
       feedForward_(toBrewFeedForwardSettings(config.pid)), steam_(config.steam), pidSettings_(config.pid),
-      timeToStandby_(config.system.timeToStandby), start_(start), lastPid_(start), lastSample_(start)
+      steamSettings_(config.steam), timeToStandby_(config.system.timeToStandby), start_(start),
+      lastPid_(start), lastSample_(start)
 {
     sensor_->setFilterActive(config.signal.filterActive);
-    snapshot_.target = pidSettings_.target;
+}
+
+PidController::Settings ControlLoop::activePidSettings() const
+{
+    return steamMode_ ? toSteamPidSettings(pidSettings_, steamSettings_) : toPidSettings(pidSettings_);
+}
+
+void ControlLoop::resetPid()
+{
+    if (steamMode_) {
+        pid_.resetTo(steamSettings_.pidBaseOutput);
+    } else {
+        pid_.reset();
+    }
 }
 
 void ControlLoop::applyConfig(const config::Config& config)
 {
     const PidController::Settings previous = pid_.settings();
-    const PidController::Settings next = toPidSettings(config.pid);
     pidSettings_ = config.pid;
+    steamSettings_ = config.steam;
+    const PidController::Settings next = activePidSettings();
     pid_.configure(next);
     feedForward_.configure(toBrewFeedForwardSettings(config.pid));
     steam_.configure(config.steam);
@@ -29,9 +44,43 @@ void ControlLoop::applyConfig(const config::Config& config)
     // them changed. The Arduino firmware reset on every settings update, so each target or standby change
     // (now easy from Home Assistant) restarted the slow integral approach.
     if (next.gains != previous.gains || next.terms != previous.terms || next.limits != previous.limits) {
-        pid_.reset();
+        resetPid();
     }
-    snapshot_.target = pidSettings_.target;
+}
+
+bool ControlLoop::setSteamMode(bool on, Millis now)
+{
+    if (on && standby_) {
+        return false;
+    }
+    steamModeStart_ = now;
+    snapshot_.steamRemaining = on ? std::chrono::duration<float>(steamSettings_.pidTimeout).count() : 0.0F;
+    if (on == steamMode_) {
+        return true;
+    }
+    steamMode_ = on;
+    // Either way the boiler can be above `enter` for a while (hot after PID steaming, or the hardware switch
+    // was on): the temperature detection waits until it is below `exit`.
+    steam_.reset();
+    steamDetectionHeld_ = true;
+    // The integrator belongs to the other target
+    pid_.configure(activePidSettings());
+    pidStale_ = true;
+    return true;
+}
+
+void ControlLoop::checkSteamTimeout(Millis now)
+{
+    if (!steamMode_) {
+        snapshot_.steamRemaining = 0.0F;
+        return;
+    }
+    const auto elapsed = now - steamModeStart_;
+    if (standby_ || elapsed >= steamSettings_.pidTimeout) {
+        setSteamMode(false, now);
+        return;
+    }
+    snapshot_.steamRemaining = std::chrono::duration<float>(steamSettings_.pidTimeout - elapsed).count();
 }
 
 void ControlLoop::onSample(Millis now)
@@ -44,7 +93,12 @@ void ControlLoop::onSample(Millis now)
     }
     snapshot_.seconds = static_cast<float>((now - start_).count()) / 1000.0F;
     snapshot_.celsius = celsius_;
-    steam_.update(celsius_, pidSettings_.target);
+    if (steamDetectionHeld_ && !steamMode_ && celsius_ < steamSettings_.exit) {
+        steamDetectionHeld_ = false;
+    }
+    if (!steamDetectionHeld_) {
+        steam_.update(celsius_, pidSettings_.target);
+    }
 
     // PID_CTRL on every 3rd conversion
     if (samples_++ % 3 == 0) {
@@ -64,6 +118,7 @@ void ControlLoop::onTick(Millis now)
     }
 
     checkStandby(now);
+    checkSteamTimeout(now);
 
     // DIAG on every 2nd tick
     if (tick % 2 == 0) {
@@ -105,12 +160,12 @@ void ControlLoop::controlHeating(Millis now)
                 feedForward_.begin();
                 lastFeedForward_ = now;
             }
-            heaterCounts_ = feedForward_.compute(pidSettings_.target, celsius_, now - lastFeedForward_);
+            heaterCounts_ = feedForward_.compute(target(), celsius_, now - lastFeedForward_);
             lastFeedForward_ = now;
         } else {
             if (brewingPrev_ || pidStale_) {
-                // Brewing or steam mode ended: start the PID clean
-                pid_.reset();
+                // Brewing or steam mode ended, or the software steam switch changed the target: start clean
+                resetPid();
                 lastPid_ = now;
                 pidStale_ = false;
             }

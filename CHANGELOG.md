@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Software steam switch: the **Steam** button on the dashboard, the Home Assistant switch "Steam mode" or
+  `POST /steam` (`on` / `off`) let the PID heat to `SteamPidTarget` (default 120 °C, no thresholds). It turns
+  itself off after `SteamPidTimeout` (default 15 min) and at standby, and is off after a restart. Steam mode
+  has its own P, I and D factors (`SteamPidPropFactor` 40, `SteamPidIntFactor` 300 s, `SteamPidDifFactor`
+  15 s) and starts the integral part at `SteamPidBaseOutput` (30 counts, the heat loss at about 118 °C).
+  New Home Assistant entities: "Steam mode" (switch), "Steam mode off in" (sensor), "Steam target
+  temperature" (number). `/lastvalues.json` has the new keys `SteamMode` and `SteamRemaining`.
+
+### Changed
+- Home Assistant's `target` is the brew target setting, not the controller's active target.
+
 ## [1.0.0-rc.6] - 2026-10-02
 
 ### Added

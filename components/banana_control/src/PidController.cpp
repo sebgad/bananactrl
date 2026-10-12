@@ -67,4 +67,13 @@ void PidController::reset()
     hasLastError_ = false;
 }
 
+void PidController::resetTo(float integralOutput)
+{
+    reset();
+    const bool integral = settings_.terms.proportional && settings_.terms.integral;
+    if (integral && settings_.gains.ki > 0.0F) {
+        integrator_ = integralOutput / settings_.gains.ki;
+    }
+}
+
 } // namespace banana::control
