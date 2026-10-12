@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-12
+
+### Fixed
+- Update from GitHub: the download no longer fails with "Failed to create socket" while browsers keep
+  connections to the controller open (one download connection at a time, 16 instead of 10 sockets).
+
 ## [1.0.0] - 2026-10-12
 
 First stable release, no changes since 1.0.0-rc.7. Summary of the release candidates:
@@ -111,7 +117,8 @@ First stable release, no changes since 1.0.0-rc.7. Summary of the release candid
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/sebgad/bananactrl/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.7...v1.0.0
 [1.0.0-rc.7]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.5...v1.0.0-rc.6
