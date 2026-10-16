@@ -171,7 +171,8 @@ format are unchanged. These differences are deliberate; do not "restore" the old
   Arduino firmware).
 - Software steam switch (not in the Arduino firmware): `IHeaterControl::requestSteamMode()` (web `/steam`,
   MQTT `steam_mode/set`) sets an event bit; the heater task calls `ControlLoop::setSteamMode()`. It is runtime
-  state, not a setting (no NVS write, off after restart). The PID then runs `toSteamPidSettings()` (brew active
+  state, not a setting (no NVS write, off after restart); a retained `steam_mode/set` (or `restart/set`)
+  message is ignored and deleted on the broker, it would act again on every connect. The PID then runs `toSteamPidSettings()` (brew active
   terms and limits, steam Kp/Tn/Tv, target `SteamPidTarget`, no thresholds) and is reset on each switch,
   in steam mode with the integral part at `SteamPidBaseOutput` (`PidController::resetTo()`). Off after `SteamPidTimeout`, at
   standby, refused in standby. The temperature detection is suspended while it is on and afterwards until

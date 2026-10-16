@@ -67,7 +67,7 @@ private:
     static void onEvent(void* arg, esp_event_base_t base, int32_t id, void* data);
     static void onTimer(void* arg);
     void onConnected(esp_mqtt_client_handle_t client);
-    void onData(esp_mqtt_client_handle_t client, std::string_view topic, std::string_view payload);
+    void onData(esp_mqtt_client_handle_t client, std::string_view topic, std::string_view payload, bool retained);
     void publishDiscovery(esp_mqtt_client_handle_t client);
     void publishState(esp_mqtt_client_handle_t client);
 

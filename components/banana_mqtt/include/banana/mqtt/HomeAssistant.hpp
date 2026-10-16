@@ -82,6 +82,13 @@ private:
 /// limits above. False if the payload is not a number or the command is not a setting.
 [[nodiscard]] bool applyCommand(Command command, std::string_view payload, config::Config& config);
 
+/// Commands that act once instead of setting a value (restart, software steam switch). A retained message on
+/// their topic would act again on every (re)connect, e.g. switch steam on after each reboot, so it is ignored.
+[[nodiscard]] constexpr bool isMomentary(Command command)
+{
+    return command == Command::Restart || command == Command::SteamMode;
+}
+
 /// Switch payload: "ON" -> true, "OFF" -> false, anything else nullopt.
 [[nodiscard]] std::optional<bool> parseSwitch(std::string_view payload);
 

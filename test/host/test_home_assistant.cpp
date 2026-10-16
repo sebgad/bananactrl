@@ -149,4 +149,13 @@ TEST(HomeAssistant, SwitchPayload)
     EXPECT_FALSE(parseSwitch("").has_value());
 }
 
+TEST(HomeAssistant, RetainedMomentaryCommandsAreIgnored)
+{
+    EXPECT_TRUE(isMomentary(Command::SteamMode));
+    EXPECT_TRUE(isMomentary(Command::Restart));
+    EXPECT_FALSE(isMomentary(Command::Target));
+    EXPECT_FALSE(isMomentary(Command::StandbyTime));
+    EXPECT_FALSE(isMomentary(Command::SteamTarget));
+}
+
 } // namespace

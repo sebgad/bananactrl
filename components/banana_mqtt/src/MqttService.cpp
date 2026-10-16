@@ -178,7 +178,7 @@ void MqttService::onEvent(void* arg, esp_event_base_t /*base*/, int32_t id, void
         // Commands are short; a payload split over several events is ignored
         if (event->data_len == event->total_data_len && event->current_data_offset == 0) {
             self->onData(event->client, {event->topic, static_cast<std::size_t>(event->topic_len)},
-                         {event->data, static_cast<std::size_t>(event->data_len)});
+                         {event->data, static_cast<std::size_t>(event->data_len)}, event->retain);
         }
         break;
     case MQTT_EVENT_ERROR:
@@ -218,7 +218,8 @@ void MqttService::publishDiscovery(esp_mqtt_client_handle_t client)
     }
 }
 
-void MqttService::onData(esp_mqtt_client_handle_t client, std::string_view topic, std::string_view payload)
+void MqttService::onData(esp_mqtt_client_handle_t client, std::string_view topic, std::string_view payload,
+                         bool retained)
 {
     if (topic == kHomeAssistantStatusTopic) {
         if (payload == kOnline) {
@@ -229,6 +230,16 @@ void MqttService::onData(esp_mqtt_client_handle_t client, std::string_view topic
     }
     const auto command = topics_.commandFor(topic);
     if (!command) {
+        return;
+    }
+    if (retained && isMomentary(*command)) {
+        if (!payload.empty()) {
+            // Stale, e.g. published with retain by a script: it would restart the device or switch steam on
+            // after every connect. Steam mode always starts off; delete the message on the broker.
+            ESP_LOGW(kTag, "retained command %.*s = '%.*s' ignored and cleared", static_cast<int>(topic.size()),
+                     topic.data(), static_cast<int>(payload.size()), payload.data());
+            esp_mqtt_client_enqueue(client, std::string{topic}.c_str(), "", 0, 1, 1, true);
+        }
         return;
     }
     if (*command == Command::Restart) {

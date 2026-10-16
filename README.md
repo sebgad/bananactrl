@@ -156,7 +156,8 @@ is off while the target is not below `SteamExitTemp` (logged as a warning). `PID
 Instead of the hardware steam switch, the PID itself can heat to a steam temperature: the **Steam** button on
 the dashboard, the Home Assistant switch "Steam mode" or `POST /steam` with the body `on` / `off`. This needs
 the SSR to control the boiler alone (brew thermostat replaced by the Pt1000, as on this machine); leave the
-hardware steam switch off.
+hardware steam switch off. The switch always starts off after a restart; a retained MQTT message on
+`steam_mode/set` is ignored (and deleted on the broker).
 
 | Key               | Default | Meaning                                                                |
 |-------------------|---------|------------------------------------------------------------------------|

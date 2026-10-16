@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Software steam switch always starts off: a retained MQTT message on `steam_mode/set` (or `restart/set`)
+  no longer switches steam on (or restarts the device) after every boot or reconnect; it is ignored and
+  deleted on the broker.
+
 ## [1.0.1] - 2026-10-12
 
 ### Fixed
