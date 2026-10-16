@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-16
+
 ### Fixed
 - Software steam switch always starts off: a retained MQTT message on `steam_mode/set` (or `restart/set`)
   no longer switches steam on (or restarts the device) after every boot or reconnect; it is ignored and
@@ -122,7 +124,8 @@ First stable release, no changes since 1.0.0-rc.7. Summary of the release candid
   SSR, web UI with graphs, settings and OTA, measurement recording and logging (differences from the Arduino
   firmware: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#differences-from-the-arduino-firmware)).
 
-[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/sebgad/bananactrl/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/sebgad/bananactrl/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/sebgad/bananactrl/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.7...v1.0.0
 [1.0.0-rc.7]: https://github.com/sebgad/bananactrl/compare/v1.0.0-rc.6...v1.0.0-rc.7
